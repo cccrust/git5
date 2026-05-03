@@ -84,6 +84,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::RevList { commits } => { rev_list(commits)?; Ok(()) }
         Command::Archive { format, tree } => { archive(format, tree.as_deref())?; Ok(()) }
         Command::Blame { file } => { blame(&file)?; Ok(()) }
+        Command::Fsck { verbose } => { fsck(verbose)?; Ok(()) }
+        Command::Gc { aggressive } => { gc(aggressive)?; Ok(()) }
     }
 }
 
@@ -128,6 +130,8 @@ pub enum Command {
     RevList { commits: Vec<String> },
     Archive { format: Option<String>, tree: Option<String> },
     Blame { file: String },
+    Fsck { verbose: bool },
+    Gc { aggressive: bool },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -1324,6 +1328,157 @@ fn blame(file: &str) -> Result<()> {
 
     for (line_num, line) in content.lines().enumerate() {
         println!("{}({}) {}", &head[..7], line_num + 1, line);
+    }
+
+    Ok(())
+}
+
+fn fsck(verbose: bool) -> Result<()> {
+    if !std::path::Path::new(".git4").exists() {
+        return Err(Git5Error::IoError("Not a git4 repository".to_string()));
+    }
+
+    let mut errors = 0;
+    let mut checked = 0;
+
+    if let Ok(entries) = fs::read_dir(".git4/objects") {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.len() == 2 {
+                if let Ok(subentries) = fs::read_dir(entry.path()) {
+                    for sub in subentries.flatten() {
+                        checked += 1;
+                        let sha = format!("{}{}", name, sub.file_name().to_string_lossy());
+                        if read_object(&sha).is_err() {
+                            if verbose {
+                                println!("error: object {} is corrupt", sha);
+                            }
+                            errors += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(entries) = fs::read_dir(".git4/refs/heads") {
+        for entry in entries.flatten() {
+            let hash = fs::read_to_string(entry.path())?.trim().to_string();
+            checked += 1;
+            if read_object(&hash).is_err() {
+                if verbose {
+                    println!("error: ref {} points to missing object {}", entry.file_name().to_string_lossy(), hash);
+                }
+                errors += 1;
+            }
+        }
+    }
+
+    println!("fsck: checked {} objects, {} errors", checked, errors);
+    Ok(())
+}
+
+fn gc(aggressive: bool) -> Result<()> {
+    if !std::path::Path::new(".git4").exists() {
+        return Err(Git5Error::IoError("Not a git4 repository".to_string()));
+    }
+
+    println!("Garbage collection");
+
+    let mut objects_removed = 0;
+
+    let reachable = get_reachable_objects()?;
+
+    if let Ok(entries) = fs::read_dir(".git4/objects") {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.len() == 2 {
+                if let Ok(subentries) = fs::read_dir(entry.path()) {
+                    for sub in subentries.flatten() {
+                        let sha = format!("{}{}", name, sub.file_name().to_string_lossy().to_string());
+                        if !reachable.contains(&sha) {
+                            fs::remove_file(sub.path())?;
+                            objects_removed += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if aggressive {
+        println!("Aggressive gc: not fully implemented");
+    }
+
+    println!("gc: removed {} objects", objects_removed);
+    Ok(())
+}
+
+fn get_reachable_objects() -> Result<std::collections::HashSet<String>> {
+    let mut reachable = std::collections::HashSet::new();
+
+    if let Some(head) = get_head()? {
+        collect_objects(&head, &mut reachable)?;
+    }
+
+    if let Ok(entries) = fs::read_dir(".git4/refs/heads") {
+        for entry in entries.flatten() {
+            let hash = fs::read_to_string(entry.path())?.trim().to_string();
+            collect_objects(&hash, &mut reachable)?;
+        }
+    }
+
+    if let Ok(entries) = fs::read_dir(".git4/refs/tags") {
+        for entry in entries.flatten() {
+            let hash = fs::read_to_string(entry.path())?.trim().to_string();
+            collect_objects(&hash, &mut reachable)?;
+        }
+    }
+
+    Ok(reachable)
+}
+
+fn collect_objects(hash: &str, reachable: &mut std::collections::HashSet<String>) -> Result<()> {
+    if reachable.contains(hash) {
+        return Ok(());
+    }
+    reachable.insert(hash.to_string());
+
+    let (obj_type, content) = read_object(hash)?;
+
+    if obj_type == "commit" {
+        let content_str = String::from_utf8_lossy(&content);
+        for line in content_str.lines() {
+            if line.starts_with("tree ") {
+                let tree_hash = line[5..].trim().to_string();
+                collect_tree_objects(&tree_hash, reachable)?;
+            }
+        }
+    } else if obj_type == "tree" {
+        collect_tree_objects(hash, reachable)?;
+    }
+
+    Ok(())
+}
+
+fn collect_tree_objects(hash: &str, reachable: &mut std::collections::HashSet<String>) -> Result<()> {
+    if reachable.contains(hash) {
+        return Ok(());
+    }
+    reachable.insert(hash.to_string());
+
+    let (obj_type, content) = read_object(hash)?;
+    if obj_type != "tree" {
+        return Ok(());
+    }
+
+    let mut i = 0;
+    while i < content.len() {
+        let space_pos = i + content[i..].iter().position(|&b| b == b' ').unwrap_or(0);
+        let nul_pos = space_pos + content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+        let sha = hex::encode(&content[nul_pos+1..nul_pos+21]);
+        collect_objects(&sha, reachable)?;
+        i = nul_pos + 21;
     }
 
     Ok(())

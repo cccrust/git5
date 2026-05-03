@@ -173,6 +173,12 @@ enum Commands {
     Blame {
         file: String,
     },
+    Fsck {
+        verbose: bool,
+    },
+    Gc {
+        aggressive: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -219,6 +225,8 @@ fn main() -> anyhow::Result<()> {
         Commands::RevList { commits } => cmd::run(cmd::Command::RevList { commits })?,
         Commands::Archive { format, tree } => cmd::run(cmd::Command::Archive { format, tree })?,
         Commands::Blame { file } => cmd::run(cmd::Command::Blame { file })?,
+        Commands::Fsck { verbose } => cmd::run(cmd::Command::Fsck { verbose })?,
+        Commands::Gc { aggressive } => cmd::run(cmd::Command::Gc { aggressive })?,
     }
 
     Ok(())
