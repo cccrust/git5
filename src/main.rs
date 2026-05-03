@@ -98,6 +98,16 @@ enum Commands {
         #[arg(default_value = "HEAD")]
         revision: String,
     },
+    ShowRef {
+        #[arg(long = "heads")]
+        heads: bool,
+        #[arg(long = "tags")]
+        tags: bool,
+    },
+    CountObjects {
+        #[arg(long = "verbose")]
+        verbose: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -128,6 +138,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Rm { files } => cmd::run(cmd::Command::Rm { files })?,
         Commands::LsFiles { cached } => cmd::run(cmd::Command::LsFiles { cached })?,
         Commands::RevParse { short, revision } => cmd::run(cmd::Command::RevParse { short, revision })?,
+        Commands::ShowRef { heads, tags } => cmd::run(cmd::Command::ShowRef { heads, tags })?,
+        Commands::CountObjects { verbose } => cmd::run(cmd::Command::CountObjects { verbose })?,
     }
 
     Ok(())

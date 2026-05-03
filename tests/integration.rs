@@ -281,3 +281,35 @@ fn test_rev_parse() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim().len(), 40);
 }
+
+#[test]
+fn test_show_ref() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    git5().arg("branch").arg("main").output().unwrap();
+    git5().arg("tag").arg("v1.0").output().unwrap();
+
+    let output = git5().arg("show-ref").output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("refs/heads/main"));
+    assert!(stdout.contains("refs/tags/v1.0"));
+}
+
+#[test]
+fn test_count_objects() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    let output = git5().arg("count-objects").output().unwrap();
+    assert!(output.status.success());
+}

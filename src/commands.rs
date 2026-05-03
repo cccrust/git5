@@ -60,6 +60,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Rm { files } => { rm(files)?; Ok(()) }
         Command::LsFiles { cached } => { ls_files(cached)?; Ok(()) }
         Command::RevParse { short, revision } => { rev_parse(&revision, short)?; Ok(()) }
+        Command::ShowRef { heads, tags } => { show_ref(heads, tags)?; Ok(()) }
+        Command::CountObjects { verbose } => { count_objects(verbose)?; Ok(()) }
     }
 }
 
@@ -88,6 +90,8 @@ pub enum Command {
     Rm { files: Vec<String> },
     LsFiles { cached: bool },
     RevParse { short: bool, revision: String },
+    ShowRef { heads: bool, tags: bool },
+    CountObjects { verbose: bool },
 }
 
 fn init() -> Result<()> {
@@ -858,5 +862,76 @@ fn rev_parse(revision: &str, short: bool) -> Result<()> {
     } else {
         println!("{}", hash);
     }
+    Ok(())
+}
+
+fn show_ref(heads: bool, tags: bool) -> Result<()> {
+    let dir = git4_dir()?;
+
+    if !tags {
+        let heads_dir = dir.join("refs/heads");
+        if heads_dir.exists() {
+            for entry in fs::read_dir(&heads_dir)? {
+                let entry = entry?;
+                let name = entry.file_name().into_string().unwrap_or_default();
+                let hash = fs::read_to_string(entry.path())?.trim().to_string();
+                println!("{} refs/heads/{}", hash, name);
+            }
+        }
+    }
+
+    if !heads {
+        let tags_dir = dir.join("refs/tags");
+        if tags_dir.exists() {
+            for entry in fs::read_dir(&tags_dir)? {
+                let entry = entry?;
+                let name = entry.file_name().into_string().unwrap_or_default();
+                let hash = fs::read_to_string(entry.path())?.trim().to_string();
+                println!("{} refs/tags/{}", hash, name);
+            }
+        }
+    }
+
+    if !heads && !tags {
+        let heads_dir = dir.join("refs/heads");
+        let tags_dir = dir.join("refs/tags");
+        if !heads_dir.exists() && !tags_dir.exists() {
+            println!("No refs found.");
+        }
+    }
+
+    Ok(())
+}
+
+fn count_objects(verbose: bool) -> Result<()> {
+    let dir = git4_dir()?;
+    let objects_dir = dir.join("objects");
+
+    let mut loose_count = 0;
+    let mut loose_size = 0u64;
+
+    if objects_dir.exists() {
+        for entry in fs::read_dir(&objects_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                let subdir = entry.path();
+                for obj in fs::read_dir(&subdir)? {
+                    let obj = obj?;
+                    loose_count += 1;
+                    loose_size += obj.metadata()?.len();
+                }
+            }
+        }
+    }
+
+    println!("{} objects, {} bytes", loose_count, loose_size);
+
+    if verbose {
+        println!("");
+        println!("count: {}", loose_count);
+        println!("size: {}", loose_size);
+        println!("in-pack: 0");
+    }
+
     Ok(())
 }
