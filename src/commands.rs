@@ -62,6 +62,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::RevParse { short, revision } => { rev_parse(&revision, short)?; Ok(()) }
         Command::ShowRef { heads, tags } => { show_ref(heads, tags)?; Ok(()) }
         Command::CountObjects { verbose } => { count_objects(verbose)?; Ok(()) }
+        Command::Describe { tags, abbrev } => { describe(tags, abbrev)?; Ok(()) }
     }
 }
 
@@ -92,6 +93,7 @@ pub enum Command {
     RevParse { short: bool, revision: String },
     ShowRef { heads: bool, tags: bool },
     CountObjects { verbose: bool },
+    Describe { tags: bool, abbrev: u32 },
 }
 
 fn init() -> Result<()> {
@@ -931,6 +933,34 @@ fn count_objects(verbose: bool) -> Result<()> {
         println!("count: {}", loose_count);
         println!("size: {}", loose_size);
         println!("in-pack: 0");
+    }
+
+    Ok(())
+}
+
+fn describe(_tags: bool, abbrev: u32) -> Result<()> {
+    let hash = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No commits yet".to_string()))?;
+    let short_hash = &hash[..abbrev as usize];
+
+    let dir = git4_dir()?;
+    let tags_dir = dir.join("refs/tags");
+    let mut found_tag = None;
+
+    if tags_dir.exists() {
+        for entry in fs::read_dir(&tags_dir)? {
+            let entry = entry?;
+            let tag_hash = fs::read_to_string(entry.path())?.trim().to_string();
+            if tag_hash == hash {
+                found_tag = Some(entry.file_name().to_string_lossy().to_string());
+                break;
+            }
+        }
+    }
+
+    if let Some(tag) = found_tag {
+        println!("{}", tag);
+    } else {
+        println!("{}-0-g{}", abbrev, short_hash);
     }
 
     Ok(())

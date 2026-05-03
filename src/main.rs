@@ -108,6 +108,12 @@ enum Commands {
         #[arg(long = "verbose")]
         verbose: bool,
     },
+    Describe {
+        #[arg(long = "tags")]
+        tags: bool,
+        #[arg(long = "abbrev", default_value = "7")]
+        abbrev: u32,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -140,6 +146,7 @@ fn main() -> anyhow::Result<()> {
         Commands::RevParse { short, revision } => cmd::run(cmd::Command::RevParse { short, revision })?,
         Commands::ShowRef { heads, tags } => cmd::run(cmd::Command::ShowRef { heads, tags })?,
         Commands::CountObjects { verbose } => cmd::run(cmd::Command::CountObjects { verbose })?,
+        Commands::Describe { tags, abbrev } => cmd::run(cmd::Command::Describe { tags, abbrev })?,
     }
 
     Ok(())

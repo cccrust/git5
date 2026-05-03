@@ -313,3 +313,18 @@ fn test_count_objects() {
     let output = git5().arg("count-objects").output().unwrap();
     assert!(output.status.success());
 }
+
+#[test]
+fn test_describe() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    git5().arg("tag").arg("v1.0.0").output().unwrap();
+
+    let output = git5().arg("describe").output().unwrap();
+    assert!(output.status.success());
+}
