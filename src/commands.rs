@@ -93,6 +93,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Worktree { subcommand, path, branch } => { worktree(&subcommand, path.as_deref(), branch.as_deref())?; Ok(()) }
         Command::Submodule { subcommand, url, path } => { submodule(&subcommand, url.as_deref(), path.as_deref())?; Ok(()) }
         Command::Clean { force, directories } => { clean(force, directories)?; Ok(()) }
+        Command::FetchAll { all } => { fetch_all(all)?; Ok(()) }
+        Command::Reset { hard, soft, commit } => { reset(hard, soft, commit.as_deref())?; Ok(()) }
     }
 }
 
@@ -146,6 +148,8 @@ pub enum Command {
     Worktree { subcommand: String, path: Option<String>, branch: Option<String> },
     Submodule { subcommand: String, url: Option<String>, path: Option<String> },
     Clean { force: bool, directories: bool },
+    FetchAll { all: bool },
+    Reset { hard: bool, soft: bool, commit: Option<String> },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -1928,5 +1932,80 @@ fn clean(force: bool, directories: bool) -> Result<()> {
     }
 
     println!("Removed {} files", removed);
+    Ok(())
+}
+
+fn fetch_all(_all: bool) -> Result<()> {
+    let config_path = ".git4/config";
+    let mut config = std::collections::BTreeMap::new();
+    if let Ok(content) = fs::read_to_string(config_path) {
+        parse_config(&content, &mut config);
+    }
+
+    let mut remotes = std::collections::HashSet::new();
+    for key in config.keys() {
+        if key.starts_with("remote.") && key.ends_with(".url") {
+            if let Some(name) = key.strip_prefix("remote.") {
+                if let Some(suffix) = name.strip_suffix(".url") {
+                    remotes.insert(suffix.to_string());
+                }
+            }
+        }
+    }
+
+    for remote in remotes {
+        if let Some(url) = config.get(&format!("remote.{}.url", remote)) {
+            println!("Fetching from {}", url);
+            let url_path = std::path::Path::new(url);
+            if let Ok(refs) = fs::read_dir(url_path.join("refs").join("heads")) {
+                for entry in refs.flatten() {
+                    let path = entry.path();
+                    let hash = fs::read_to_string(&path)?.trim().to_string();
+                    println!("  {} -> refs/heads/{}", &hash[..7], entry.file_name().to_string_lossy());
+                }
+            }
+        }
+    }
+
+    println!("Fetch complete");
+    Ok(())
+}
+
+fn reset(hard: bool, soft: bool, commit: Option<&str>) -> Result<()> {
+    let target = if let Some(c) = commit {
+        resolve_revision(c)?
+    } else {
+        get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD".to_string()))?
+    };
+
+    if !soft {
+        let (obj_type, content) = read_object(&target)?;
+        if obj_type == "commit" || obj_type == "tree" {
+            let tree_hash = if obj_type == "commit" {
+                let content_str = String::from_utf8_lossy(&content);
+                content_str.lines()
+                    .find(|l| l.starts_with("tree "))
+                    .map(|l| l[5..].trim().to_string())
+                    .unwrap_or_default()
+            } else {
+                target.clone()
+            };
+
+            if hard && !tree_hash.is_empty() {
+                restore_tree(&tree_hash, std::path::Path::new("."))?;
+            }
+        }
+    }
+
+    update_head(&target)?;
+    
+    if hard {
+        println!("HEAD is now at {}", &target[..7]);
+    } else if soft {
+        println!("HEAD is now at {}", &target[..7]);
+    } else {
+        println!("HEAD is now at {}", &target[..7]);
+    }
+
     Ok(())
 }

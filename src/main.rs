@@ -209,6 +209,17 @@ enum Commands {
         force: bool,
         directories: bool,
     },
+    FetchAll {
+        #[arg(long)]
+        all: bool,
+    },
+    Reset {
+        #[arg(long)]
+        hard: bool,
+        #[arg(long)]
+        soft: bool,
+        commit: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -264,6 +275,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Worktree { subcommand, path, branch } => cmd::run(cmd::Command::Worktree { subcommand, path, branch })?,
         Commands::Submodule { subcommand, url, path } => cmd::run(cmd::Command::Submodule { subcommand, url, path })?,
         Commands::Clean { force, directories } => cmd::run(cmd::Command::Clean { force, directories })?,
+        Commands::FetchAll { all } => cmd::run(cmd::Command::FetchAll { all })?,
+        Commands::Reset { hard, soft, commit } => cmd::run(cmd::Command::Reset { hard, soft, commit })?,
     }
 
     Ok(())
