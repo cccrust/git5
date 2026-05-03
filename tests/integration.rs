@@ -253,3 +253,31 @@ fn test_tag_delete() {
     let output = git5().arg("tag").output().unwrap();
     assert!(!String::from_utf8_lossy(&output.stdout).contains("v1.0"));
 }
+
+#[test]
+fn test_ls_files() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+
+    let output = git5().arg("ls-files").output().unwrap();
+    assert!(String::from_utf8_lossy(&output.stdout).contains("test.txt"));
+}
+
+#[test]
+fn test_rev_parse() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    let output = git5().arg("rev-parse").arg("HEAD").output().unwrap();
+    eprintln!("stdout: {:?}", String::from_utf8_lossy(&output.stdout));
+    eprintln!("stderr: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim().len(), 40);
+}

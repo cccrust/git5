@@ -64,6 +64,11 @@ pub fn commit_tree(tree_hash: &str, parent_hash: Option<&str>, message: &str) ->
 
 pub fn resolve_revision(name: &str) -> Result<String> {
     let dir = git4_dir()?;
+
+    if name == "HEAD" {
+        return get_head()?.ok_or_else(|| Git5Error::InvalidRef("HEAD has no commit".to_string()));
+    }
+
     let branch_path = dir.join("refs/heads").join(name);
     if branch_path.exists() {
         let hash = fs::read_to_string(branch_path)?;

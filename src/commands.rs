@@ -58,6 +58,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Config { list, key, value } => { config(list, key, value)?; Ok(()) }
         Command::Tag { delete, name } => { tag(delete, name)?; Ok(()) }
         Command::Rm { files } => { rm(files)?; Ok(()) }
+        Command::LsFiles { cached } => { ls_files(cached)?; Ok(()) }
+        Command::RevParse { short, revision } => { rev_parse(&revision, short)?; Ok(()) }
     }
 }
 
@@ -84,6 +86,8 @@ pub enum Command {
     Config { list: bool, key: Option<String>, value: Option<String> },
     Tag { delete: bool, name: Option<String> },
     Rm { files: Vec<String> },
+    LsFiles { cached: bool },
+    RevParse { short: bool, revision: String },
 }
 
 fn init() -> Result<()> {
@@ -830,5 +834,29 @@ fn rm(files: Vec<String>) -> Result<()> {
         content.push_str(&format!("{} {}\n", hash, path));
     }
     fs::write(index_path, content)?;
+    Ok(())
+}
+
+fn ls_files(cached: bool) -> Result<()> {
+    let index = read_index()?;
+    if cached {
+        for (path, _hash) in &index {
+            println!("{}", path);
+        }
+    } else {
+        for (path, _hash) in &index {
+            println!("{}", path);
+        }
+    }
+    Ok(())
+}
+
+fn rev_parse(revision: &str, short: bool) -> Result<()> {
+    let hash = resolve_revision(revision)?;
+    if short {
+        println!("{}", &hash[..7]);
+    } else {
+        println!("{}", hash);
+    }
     Ok(())
 }

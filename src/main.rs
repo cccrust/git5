@@ -88,6 +88,16 @@ enum Commands {
     Rm {
         files: Vec<String>,
     },
+    LsFiles {
+        #[arg(long = "cached")]
+        cached: bool,
+    },
+    RevParse {
+        #[arg(short)]
+        short: bool,
+        #[arg(default_value = "HEAD")]
+        revision: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -116,6 +126,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Config { list, key, value } => cmd::run(cmd::Command::Config { list, key, value })?,
         Commands::Tag { delete, name } => cmd::run(cmd::Command::Tag { delete, name })?,
         Commands::Rm { files } => cmd::run(cmd::Command::Rm { files })?,
+        Commands::LsFiles { cached } => cmd::run(cmd::Command::LsFiles { cached })?,
+        Commands::RevParse { short, revision } => cmd::run(cmd::Command::RevParse { short, revision })?,
     }
 
     Ok(())
