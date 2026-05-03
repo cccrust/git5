@@ -72,6 +72,12 @@ enum Commands {
     UnpackObjects {
         packfile: String,
     },
+    Config {
+        #[arg(long = "list")]
+        list: bool,
+        key: Option<String>,
+        value: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -97,6 +103,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Remote { action, name, url } => cmd::run(cmd::Command::Remote { action, name, url })?,
         Commands::LsRemote { remote } => cmd::run(cmd::Command::LsRemote { remote })?,
         Commands::UnpackObjects { packfile } => cmd::run(cmd::Command::UnpackObjects { packfile })?,
+        Commands::Config { list, key, value } => cmd::run(cmd::Command::Config { list, key, value })?,
     }
 
     Ok(())

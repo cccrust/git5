@@ -55,6 +55,7 @@ pub fn run(command: Command) -> Result<()> {
         }
         Command::LsRemote { remote } => { ls_remote(&remote)?; Ok(()) }
         Command::UnpackObjects { packfile } => { unpack_objects(&packfile)?; Ok(()) }
+        Command::Config { list, key, value } => { config(list, key, value)?; Ok(()) }
     }
 }
 
@@ -78,6 +79,7 @@ pub enum Command {
     Remote { action: String, name: String, url: String },
     LsRemote { remote: String },
     UnpackObjects { packfile: String },
+    Config { list: bool, key: Option<String>, value: Option<String> },
 }
 
 fn init() -> Result<()> {
@@ -666,6 +668,91 @@ fn unpack_objects(packfile: &str) -> Result<()> {
     }
     
     println!("Unpacked {} loose objects. Encountered {} unresolved deltas.", resolved_count, delta_count);
-    
+
+    Ok(())
+}
+
+fn config(list: bool, key: Option<String>, value: Option<String>) -> Result<()> {
+    let dir = git4_dir()?;
+    let config_path = dir.join("config");
+
+    let mut config = BTreeMap::new();
+
+    if config_path.exists() {
+        let content = fs::read_to_string(&config_path)?;
+        parse_config(&content, &mut config);
+    }
+
+    if list {
+        for (k, v) in &config {
+            println!("{} = {}", k, v);
+        }
+        return Ok(());
+    }
+
+    if let Some(k) = key {
+        if let Some(v) = value {
+            config.insert(k.clone(), v.clone());
+            save_config(&config_path, &config)?;
+            println!("Set {} = {}", k, v);
+        } else {
+            if let Some(v) = config.get(&k) {
+                println!("{}", v);
+            } else {
+                println!("Config key '{}' not found", k);
+            }
+        }
+    } else {
+        println!("Usage: git5 config <key> [value]");
+        println!("       git5 config --list");
+    }
+
+    Ok(())
+}
+
+fn parse_config(content: &str, config: &mut BTreeMap<String, String>) {
+    let mut current_section = String::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            current_section = line[1..line.len()-1].to_string();
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            let key = if current_section.is_empty() {
+                k.trim().to_string()
+            } else {
+                format!("{}.{}", current_section, k.trim())
+            };
+            config.insert(key, v.trim().to_string());
+        }
+    }
+}
+
+fn save_config(path: &Path, config: &BTreeMap<String, String>) -> Result<()> {
+    let mut sections: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+
+    for (k, v) in config {
+        if let Some((section, key)) = k.split_once('.') {
+            sections.entry(section.to_string()).or_default().insert(key.to_string(), v.clone());
+        } else {
+            sections.entry("".to_string()).or_default().insert(k.clone(), v.clone());
+        }
+    }
+
+    let mut content = String::new();
+    for (section, items) in &sections {
+        if !section.is_empty() {
+            content.push_str(&format!("[{}]\n", section));
+        }
+        for (k, v) in items {
+            content.push_str(&format!("{} = {}\n", k, v));
+        }
+    }
+
+    fs::write(path, content)?;
     Ok(())
 }

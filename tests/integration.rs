@@ -76,3 +76,60 @@ fn test_status_untracked() {
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("new.txt"));
 }
+
+#[test]
+fn test_branch() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    let output = git5().arg("branch").arg("test-branch").output().unwrap();
+    assert!(output.status.success());
+
+    let output = git5().arg("branch").output().unwrap();
+    assert!(String::from_utf8_lossy(&output.stdout).contains("test-branch"));
+}
+
+#[test]
+fn test_config_set_get() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    let output = git5().arg("config").arg("user.name").arg("Test User").output().unwrap();
+    assert!(output.status.success());
+
+    let output = git5().arg("config").arg("user.name").output().unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Test User"));
+}
+
+#[test]
+fn test_config_list() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    git5().arg("config").arg("user.email").arg("test@example.com").output().unwrap();
+
+    let output = git5().arg("config").arg("--list").output().unwrap();
+    eprintln!("stdout: {:?}", String::from_utf8_lossy(&output.stdout));
+    eprintln!("stderr: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("user.email"));
+}
+
+#[test]
+fn test_log() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("First commit").output().unwrap();
+
+    let output = git5().arg("log").output().unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("commit"));
+}
