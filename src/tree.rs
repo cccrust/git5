@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::io::Write;
 
 pub fn write_tree(path: &Path) -> Result<String> {
     let mut entries = Vec::new();
@@ -143,8 +144,118 @@ pub fn read_tree_recursive(hash: &str, base_path: &Path, files: &mut BTreeMap<St
         } else {
             files.insert(path.to_str().unwrap().to_string(), sha);
         }
-        
+
         i = nul_pos + 21;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn init() -> Result<()> {
+        fs::create_dir_all(".git4")?;
+        fs::create_dir_all(".git4/objects")?;
+        fs::create_dir_all(".git4/refs")?;
+        fs::create_dir_all(".git4/refs/heads")?;
+        fs::write(".git4/HEAD", "ref: refs/heads/main\n")?;
+        Ok(())
+    }
+
+    fn setup_test_repo() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp).unwrap();
+        init().unwrap();
+        temp
+    }
+
+    #[test]
+    fn test_write_tree_single_file() {
+        let _temp = setup_test_repo();
+        std::fs::write("test.txt", "hello").unwrap();
+        let hash = write_tree(Path::new(".")).unwrap();
+        assert_eq!(hash.len(), 40);
+    }
+
+    #[test]
+    fn test_write_tree_empty() {
+        let _temp = setup_test_repo();
+        let hash = write_tree(Path::new(".")).unwrap();
+        assert_eq!(hash.len(), 40);
+    }
+
+    #[test]
+    fn test_write_tree_nested_dirs() {
+        let _temp = setup_test_repo();
+        fs::create_dir_all("dir1/dir2").unwrap();
+        std::fs::write("dir1/dir2/file.txt", "content").unwrap();
+        let hash = write_tree(Path::new(".")).unwrap();
+        assert_eq!(hash.len(), 40);
+    }
+
+    #[test]
+    fn test_restore_tree() {
+        let _temp = setup_test_repo();
+        std::fs::write("test.txt", "test content").unwrap();
+        let tree_hash = write_tree(Path::new(".")).unwrap();
+        std::fs::remove_file("test.txt").unwrap();
+        restore_tree(&tree_hash, Path::new(".")).unwrap();
+        let content = std::fs::read_to_string("test.txt").unwrap();
+        assert_eq!(content, "test content");
+    }
+
+    #[test]
+    fn test_restore_tree_nested() {
+        let _temp = setup_test_repo();
+        fs::create_dir_all("a/b").unwrap();
+        std::fs::write("a/b/file.txt", "nested").unwrap();
+        let tree_hash = write_tree(Path::new(".")).unwrap();
+        std::fs::remove_dir_all("a").unwrap();
+        restore_tree(&tree_hash, Path::new(".")).unwrap();
+        assert!(Path::new("a/b/file.txt").exists());
+    }
+
+    #[test]
+    fn test_read_tree_recursive() {
+        let _temp = setup_test_repo();
+        std::fs::write("file1.txt", "content1").unwrap();
+        std::fs::write("file2.txt", "content2").unwrap();
+        let tree_hash = write_tree(Path::new(".")).unwrap();
+        let mut files = BTreeMap::new();
+        read_tree_recursive(&tree_hash, Path::new(""), &mut files).unwrap();
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn test_tree_ignores_git4() {
+        let _temp = setup_test_repo();
+        std::fs::write("normal.txt", "normal").unwrap();
+        std::fs::write(".git4/somefile", "git4").unwrap();
+        let hash = write_tree(Path::new(".")).unwrap();
+        let mut files = BTreeMap::new();
+        read_tree_recursive(&hash, Path::new(""), &mut files).unwrap();
+        assert!(files.contains_key("normal.txt"));
+    }
+
+    #[test]
+    fn test_get_head_tree_no_commit() {
+        let _temp = setup_test_repo();
+        let result = get_head_tree().unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_tree_sorting() {
+        let _temp = setup_test_repo();
+        std::fs::write("z_file.txt", "z").unwrap();
+        std::fs::write("a_file.txt", "a").unwrap();
+        let hash = write_tree(Path::new(".")).unwrap();
+        let mut files = BTreeMap::new();
+        read_tree_recursive(&hash, Path::new(""), &mut files).unwrap();
+        let keys: Vec<&String> = files.keys().collect();
+        assert_eq!(keys[0], "a_file.txt");
+        assert_eq!(keys[1], "z_file.txt");
+    }
 }

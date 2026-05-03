@@ -73,3 +73,107 @@ pub fn get_workspace_files(path: &Path, base: &Path, map: &mut BTreeMap<String, 
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn init() -> Result<()> {
+        fs::create_dir_all(".git4")?;
+        fs::create_dir_all(".git4/objects")?;
+        fs::create_dir_all(".git4/refs")?;
+        fs::create_dir_all(".git4/refs/heads")?;
+        fs::write(".git4/HEAD", "ref: refs/heads/main\n")?;
+        Ok(())
+    }
+
+    fn setup_test_repo() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp).unwrap();
+        init().unwrap();
+        temp
+    }
+
+    #[test]
+    fn test_read_index_empty() {
+        let _temp = setup_test_repo();
+        let index = read_index().unwrap();
+        assert!(index.is_empty());
+    }
+
+    #[test]
+    fn test_add_files() {
+        let _temp = setup_test_repo();
+        std::fs::write("test.txt", "content").unwrap();
+        add_files(vec!["test.txt".to_string()]).unwrap();
+        let index = read_index().unwrap();
+        assert!(index.contains_key("test.txt"));
+    }
+
+    #[test]
+    fn test_add_files_multiple() {
+        let _temp = setup_test_repo();
+        std::fs::write("a.txt", "a").unwrap();
+        std::fs::write("b.txt", "b").unwrap();
+        add_files(vec!["a.txt".to_string(), "b.txt".to_string()]).unwrap();
+        let index = read_index().unwrap();
+        assert_eq!(index.len(), 2);
+    }
+
+    #[test]
+    fn test_add_files_preserves_existing() {
+        let _temp = setup_test_repo();
+        std::fs::write("existing.txt", "existing").unwrap();
+        std::fs::write("new.txt", "new").unwrap();
+        add_files(vec!["existing.txt".to_string()]).unwrap();
+        add_files(vec!["new.txt".to_string()]).unwrap();
+        let index = read_index().unwrap();
+        assert_eq!(index.len(), 2);
+    }
+
+    #[test]
+    fn test_add_nonexistent_file() {
+        let _temp = setup_test_repo();
+        add_files(vec!["nonexistent.txt".to_string()]).unwrap();
+        let index = read_index().unwrap();
+        assert!(index.is_empty());
+    }
+
+    #[test]
+    fn test_get_workspace_files() {
+        let _temp = setup_test_repo();
+        std::fs::write("test.txt", "content").unwrap();
+        let mut files = BTreeMap::new();
+        get_workspace_files(Path::new("."), Path::new("."), &mut files).unwrap();
+        assert!(files.contains_key("test.txt"));
+    }
+
+    #[test]
+    fn test_get_workspace_files_nested() {
+        let _temp = setup_test_repo();
+        fs::create_dir_all("dir/subdir").unwrap();
+        std::fs::write("dir/subdir/file.txt", "content").unwrap();
+        let mut files = BTreeMap::new();
+        get_workspace_files(Path::new("."), Path::new("."), &mut files).unwrap();
+        assert!(files.contains_key("dir/subdir/file.txt"));
+    }
+
+    #[test]
+    fn test_get_workspace_files_ignores_git4() {
+        let _temp = setup_test_repo();
+        std::fs::write("normal.txt", "normal").unwrap();
+        let mut files = BTreeMap::new();
+        get_workspace_files(Path::new("."), Path::new("."), &mut files).unwrap();
+        assert!(files.contains_key("normal.txt"));
+    }
+
+    #[test]
+    fn test_index_format() {
+        let _temp = setup_test_repo();
+        std::fs::write("test.txt", "content").unwrap();
+        add_files(vec!["test.txt".to_string()]).unwrap();
+        let content = fs::read_to_string(".git4/index").unwrap();
+        assert!(content.contains("test.txt"));
+    }
+}

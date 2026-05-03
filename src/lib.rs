@@ -1,3 +1,5 @@
+#![allow(dead_code, unused)]
+
 pub mod object;
 pub mod tree;
 pub mod commit;

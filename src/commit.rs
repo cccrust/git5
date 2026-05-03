@@ -99,3 +99,129 @@ pub fn is_ancestor(ancestor: &str, target: &str) -> Result<bool> {
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn init() -> Result<()> {
+        fs::create_dir_all(".git4")?;
+        fs::create_dir_all(".git4/objects")?;
+        fs::create_dir_all(".git4/refs")?;
+        fs::create_dir_all(".git4/refs/heads")?;
+        fs::write(".git4/HEAD", "ref: refs/heads/main\n")?;
+        Ok(())
+    }
+
+    fn setup_test_repo() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp).unwrap();
+        init().unwrap();
+        temp
+    }
+
+    #[test]
+    fn test_get_head_no_commits() {
+        let _temp = setup_test_repo();
+        let head = get_head().unwrap();
+        assert!(head.is_none());
+    }
+
+    #[test]
+    fn test_update_head_ref() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let commit_hash = commit_tree(&tree_hash, None, "Initial").unwrap();
+        update_head(&commit_hash).unwrap();
+        let head = get_head().unwrap();
+        assert_eq!(head, Some(commit_hash));
+    }
+
+    #[test]
+    fn test_commit_tree_basic() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let hash = commit_tree(&tree_hash, None, "Test commit").unwrap();
+        assert_eq!(hash.len(), 40);
+    }
+
+    #[test]
+    fn test_commit_tree_with_parent() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let parent_hash = commit_tree(&tree_hash, None, "Parent").unwrap();
+        let child_hash = commit_tree(&tree_hash, Some(&parent_hash), "Child").unwrap();
+        let parent = get_commit_parent(&child_hash).unwrap();
+        assert_eq!(parent, Some(parent_hash));
+    }
+
+    #[test]
+    fn test_resolve_revision_branch() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let commit_hash = commit_tree(&tree_hash, None, "Test").unwrap();
+        fs::create_dir_all(".git4/refs/heads").unwrap();
+        fs::write(".git4/refs/heads/test-branch", format!("{}\n", commit_hash)).unwrap();
+        let resolved = resolve_revision("test-branch").unwrap();
+        assert_eq!(resolved, commit_hash);
+    }
+
+    #[test]
+    fn test_resolve_revision_commit() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let commit_hash = commit_tree(&tree_hash, None, "Test").unwrap();
+        let resolved = resolve_revision(&commit_hash).unwrap();
+        assert_eq!(resolved, commit_hash);
+    }
+
+    #[test]
+    fn test_resolve_revision_not_found() {
+        let _temp = setup_test_repo();
+        let result = resolve_revision("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_commit_parent_none() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let commit_hash = commit_tree(&tree_hash, None, "First").unwrap();
+        let parent = get_commit_parent(&commit_hash).unwrap();
+        assert!(parent.is_none());
+    }
+
+    #[test]
+    fn test_is_ancestor_true() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let commit1 = commit_tree(&tree_hash, None, "First").unwrap();
+        let commit2 = commit_tree(&tree_hash, Some(&commit1), "Second").unwrap();
+        let result = is_ancestor(&commit1, &commit2).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_is_ancestor_false() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let commit1 = commit_tree(&tree_hash, None, "First").unwrap();
+        let commit2 = commit_tree(&tree_hash, None, "Second").unwrap();
+        let result = is_ancestor(&commit1, &commit2).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_commit_format() {
+        let _temp = setup_test_repo();
+        let tree_hash = write_object("tree", b"").unwrap();
+        let hash = commit_tree(&tree_hash, None, "Test message").unwrap();
+        let (_obj_type, content) = read_object(&hash).unwrap();
+        let content_str = String::from_utf8_lossy(&content);
+        assert!(content_str.contains("tree "));
+        assert!(content_str.contains("author "));
+        assert!(content_str.contains("committer "));
+        assert!(content_str.contains("Test message"));
+    }
+}
