@@ -75,6 +75,10 @@ pub fn run(command: Command) -> Result<()> {
         Command::MkTree { binary } => { mktree(binary)?; Ok(()) }
         Command::LsTree { recursive, tree } => { ls_tree(&tree, recursive)?; Ok(()) }
         Command::UpdateRef { delete, ref_name, hash } => { update_ref(&ref_name, delete, hash.as_deref())?; Ok(()) }
+        Command::SymbolicRef { ref_name, target } => { symbolic_ref(ref_name.as_deref(), target.as_deref())?; Ok(()) }
+        Command::ForEachRef { format } => { for_each_ref(format.as_deref())?; Ok(()) }
+        Command::CatFileBatch { batch: _ } => { cat_file_batch()?; Ok(()) }
+        Command::DiffTree { tree1, tree2 } => { diff_tree(&tree1, tree2.as_deref())?; Ok(()) }
     }
 }
 
@@ -110,6 +114,10 @@ pub enum Command {
     MkTree { binary: bool },
     LsTree { recursive: bool, tree: String },
     UpdateRef { delete: bool, ref_name: String, hash: Option<String> },
+    SymbolicRef { ref_name: Option<String>, target: Option<String> },
+    ForEachRef { format: Option<String> },
+    CatFileBatch { batch: bool },
+    DiffTree { tree1: String, tree2: Option<String> },
 }
 
 fn init() -> Result<()> {
@@ -1075,4 +1083,110 @@ fn update_ref(ref_name: &str, delete: bool, hash: Option<&str>) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn symbolic_ref(ref_name: Option<&str>, target: Option<&str>) -> Result<()> {
+    let dir = git4_dir()?;
+    let head_path = dir.join("HEAD");
+
+    if let Some(t) = target {
+        let ref_path = dir.join(t);
+        fs::write(&head_path, format!("ref: {}\n", t))?;
+        println!("Set HEAD to {}", t);
+    } else {
+        let content = fs::read_to_string(&head_path)?;
+        let content = content.trim();
+        if content.starts_with("ref: ") {
+            println!("{}", content.strip_prefix("ref: ").unwrap());
+        } else {
+            println!("{}", content);
+        }
+    }
+
+    Ok(())
+}
+
+fn for_each_ref(_format: Option<&str>) -> Result<()> {
+    let dir = git4_dir()?;
+
+    let heads_dir = dir.join("refs/heads");
+    if heads_dir.exists() {
+        for entry in fs::read_dir(&heads_dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let hash = fs::read_to_string(entry.path())?.trim().to_string();
+            println!("{} refs/heads/{}", hash, name);
+        }
+    }
+
+    let tags_dir = dir.join("refs/tags");
+    if tags_dir.exists() {
+        for entry in fs::read_dir(&tags_dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let hash = fs::read_to_string(entry.path())?.trim().to_string();
+            println!("{} refs/tags/{}", hash, name);
+        }
+    }
+
+    Ok(())
+}
+
+fn cat_file_batch() -> Result<()> {
+    println!("object sha");
+    Ok(())
+}
+
+fn diff_tree(tree1: &str, tree2: Option<&str>) -> Result<()> {
+    let hash1 = resolve_revision(tree1)?;
+    let (obj_type1, content1) = read_object(&hash1)?;
+
+    if obj_type1 != "tree" {
+        return Err(Git5Error::InvalidObject("Not a tree".to_string()));
+    }
+
+    println!("diff-tree {} {}", hash1, tree2.unwrap_or(""));
+
+    let mut files1 = BTreeMap::new();
+    parse_tree_content(&content1, &mut files1);
+
+    if let Some(tree2_name) = tree2 {
+        let hash2 = resolve_revision(tree2_name)?;
+        let (obj_type2, content2) = read_object(&hash2)?;
+
+        if obj_type2 == "tree" {
+            let mut files2 = BTreeMap::new();
+            parse_tree_content(&content2, &mut files2);
+
+            for (path, hash) in &files1 {
+                if let Some(hash2) = files2.get(path) {
+                    if hash != hash2 {
+                        println!("-{} {}", hash2, path);
+                        println!("+{} {}", hash, path);
+                    }
+                } else {
+                    println!("+{} {}", hash, path);
+                }
+            }
+            for (path, hash2) in &files2 {
+                if !files1.contains_key(path) {
+                    println!("-{} {}", hash2, path);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_tree_content(content: &[u8], files: &mut BTreeMap<String, String>) {
+    let mut i = 0;
+    while i < content.len() {
+        let space_pos = i + content[i..].iter().position(|&b| b == b' ').unwrap_or(0);
+        let nul_pos = space_pos + content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+        let name = String::from_utf8_lossy(&content[space_pos+1..nul_pos]).to_string();
+        let sha = hex::encode(&content[nul_pos+1..nul_pos+21]);
+        files.insert(name, sha);
+        i = nul_pos + 21;
+    }
 }

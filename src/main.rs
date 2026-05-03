@@ -136,6 +136,22 @@ enum Commands {
         ref_name: String,
         hash: Option<String>,
     },
+    SymbolicRef {
+        ref_name: Option<String>,
+        target: Option<String>,
+    },
+    ForEachRef {
+        #[arg(long = "format")]
+        format: Option<String>,
+    },
+    CatFileBatch {
+        #[arg(short)]
+        batch: bool,
+    },
+    DiffTree {
+        tree1: String,
+        tree2: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -173,6 +189,10 @@ fn main() -> anyhow::Result<()> {
         Commands::MkTree { binary } => cmd::run(cmd::Command::MkTree { binary })?,
         Commands::LsTree { recursive, tree } => cmd::run(cmd::Command::LsTree { recursive, tree })?,
         Commands::UpdateRef { delete, ref_name, hash } => cmd::run(cmd::Command::UpdateRef { delete, ref_name, hash })?,
+        Commands::SymbolicRef { ref_name, target } => cmd::run(cmd::Command::SymbolicRef { ref_name, target })?,
+        Commands::ForEachRef { format } => cmd::run(cmd::Command::ForEachRef { format })?,
+        Commands::CatFileBatch { batch } => cmd::run(cmd::Command::CatFileBatch { batch })?,
+        Commands::DiffTree { tree1, tree2 } => cmd::run(cmd::Command::DiffTree { tree1, tree2 })?,
     }
 
     Ok(())
