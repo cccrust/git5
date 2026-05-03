@@ -152,6 +152,15 @@ enum Commands {
         tree1: String,
         tree2: Option<String>,
     },
+    NameRev {
+        commits: Vec<String>,
+    },
+    VerifyCommit {
+        commit: String,
+    },
+    RevList {
+        commits: Vec<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -193,6 +202,9 @@ fn main() -> anyhow::Result<()> {
         Commands::ForEachRef { format } => cmd::run(cmd::Command::ForEachRef { format })?,
         Commands::CatFileBatch { batch } => cmd::run(cmd::Command::CatFileBatch { batch })?,
         Commands::DiffTree { tree1, tree2 } => cmd::run(cmd::Command::DiffTree { tree1, tree2 })?,
+        Commands::NameRev { commits } => cmd::run(cmd::Command::NameRev { commits })?,
+        Commands::VerifyCommit { commit } => cmd::run(cmd::Command::VerifyCommit { commit })?,
+        Commands::RevList { commits } => cmd::run(cmd::Command::RevList { commits })?,
     }
 
     Ok(())

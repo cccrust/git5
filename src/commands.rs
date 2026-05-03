@@ -79,6 +79,9 @@ pub fn run(command: Command) -> Result<()> {
         Command::ForEachRef { format } => { for_each_ref(format.as_deref())?; Ok(()) }
         Command::CatFileBatch { batch: _ } => { cat_file_batch()?; Ok(()) }
         Command::DiffTree { tree1, tree2 } => { diff_tree(&tree1, tree2.as_deref())?; Ok(()) }
+        Command::NameRev { commits } => { name_rev(commits)?; Ok(()) }
+        Command::VerifyCommit { commit } => { verify_commit(&commit)?; Ok(()) }
+        Command::RevList { commits } => { rev_list(commits)?; Ok(()) }
     }
 }
 
@@ -118,6 +121,9 @@ pub enum Command {
     ForEachRef { format: Option<String> },
     CatFileBatch { batch: bool },
     DiffTree { tree1: String, tree2: Option<String> },
+    NameRev { commits: Vec<String> },
+    VerifyCommit { commit: String },
+    RevList { commits: Vec<String> },
 }
 
 fn init() -> Result<()> {
@@ -1189,4 +1195,84 @@ fn parse_tree_content(content: &[u8], files: &mut BTreeMap<String, String>) {
         files.insert(name, sha);
         i = nul_pos + 21;
     }
+}
+
+fn name_rev(commits: Vec<String>) -> Result<()> {
+    for commit in commits {
+        let hash = resolve_revision(&commit)?;
+        let mut current = hash.clone();
+        let mut found_ref = None;
+
+        if let Ok(entries) = fs::read_dir(".git4/refs/heads") {
+            for entry in entries.flatten() {
+                let ref_name = entry.file_name().to_string_lossy().to_string();
+                let ref_hash = fs::read_to_string(entry.path())?.trim().to_string();
+                if ref_hash == current {
+                    found_ref = Some(format!("refs/heads/{}", ref_name));
+                    break;
+                }
+            }
+        }
+
+        if found_ref.is_none() {
+            if let Ok(entries) = fs::read_dir(".git4/refs/tags") {
+                for entry in entries.flatten() {
+                    let ref_name = entry.file_name().to_string_lossy().to_string();
+                    let ref_hash = fs::read_to_string(entry.path())?.trim().to_string();
+                    if ref_hash == current {
+                        found_ref = Some(format!("refs/tags/{}", ref_name));
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(ref_name) = found_ref {
+            println!("{} ({})", hash, ref_name);
+        } else {
+            println!("{}", hash);
+        }
+    }
+    Ok(())
+}
+
+fn verify_commit(commit: &str) -> Result<()> {
+    let hash = resolve_revision(commit)?;
+    let (obj_type, content) = read_object(&hash)?;
+
+    if obj_type != "commit" {
+        return Err(Git5Error::InvalidObject("Not a commit".to_string()));
+    }
+
+    println!("Commit {}", hash);
+    println!("Warning: commit {} is not signed", hash);
+    Ok(())
+}
+
+fn rev_list(commits: Vec<String>) -> Result<()> {
+    if commits.is_empty() {
+        return Ok(());
+    }
+
+    let mut to_process: Vec<String> = vec![resolve_revision(&commits[0])?];
+    let mut processed = std::collections::HashSet::new();
+
+    while let Some(commit_hash) = to_process.pop() {
+        if processed.contains(&commit_hash) {
+            continue;
+        }
+        processed.insert(commit_hash.clone());
+
+        println!("{}", commit_hash);
+
+        let (obj_type, content) = read_object(&commit_hash)?;
+        if obj_type == "commit" {
+            let content_str = String::from_utf8_lossy(&content);
+            if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+                let parent_hash = parent_line[7..].trim().to_string();
+                to_process.push(parent_hash);
+            }
+        }
+    }
+    Ok(())
 }
