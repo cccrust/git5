@@ -1,2 +1,2 @@
-# git5
+# git4
 A minimalist git system (rust).
