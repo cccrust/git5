@@ -11,7 +11,7 @@ use ureq;
 
 pub fn run(command: Command) -> Result<()> {
     match command {
-        Command::Init => { init()?; Ok(()) }
+        Command::Init { bare, path } => { init(bare, path.as_deref())?; Ok(()) }
         Command::HashObject { write, file } => {
             let hash = hash_object(&file, write)?;
             println!("{}", hash);
@@ -88,7 +88,7 @@ pub fn run(command: Command) -> Result<()> {
 }
 
 pub enum Command {
-    Init,
+    Init { bare: bool, path: Option<String> },
     HashObject { write: bool, file: String },
     CatFile { print: bool, size: bool, type_flag: bool, object: String },
     WriteTree,
@@ -130,13 +130,31 @@ pub enum Command {
     Blame { file: String },
 }
 
-fn init() -> Result<()> {
-    fs::create_dir(".git4")?;
-    fs::create_dir(".git4/objects")?;
-    fs::create_dir(".git4/refs")?;
-    fs::create_dir(".git4/refs/heads")?;
-    fs::write(".git4/HEAD", "ref: refs/heads/main\n")?;
-    println!("Initialized empty git4 repository in .git4/");
+fn init(bare: bool, path: Option<&str>) -> Result<()> {
+    let base_path = if bare {
+        if let Some(p) = path {
+            std::path::PathBuf::from(p)
+        } else {
+            std::env::current_dir()?
+        }
+    } else {
+        if let Some(p) = path {
+            std::path::PathBuf::from(p).join(".git4")
+        } else {
+            std::path::PathBuf::from(".git4")
+        }
+    };
+
+    fs::create_dir_all(base_path.join("objects"))?;
+    fs::create_dir_all(base_path.join("refs"))?;
+    fs::create_dir_all(base_path.join("refs/heads"))?;
+    fs::write(base_path.join("HEAD"), "ref: refs/heads/main\n")?;
+
+    if bare {
+        println!("Initialized empty bare repository in {}", base_path.display());
+    } else {
+        println!("Initialized empty git4 repository in {}/", base_path.display());
+    }
     Ok(())
 }
 

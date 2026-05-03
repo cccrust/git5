@@ -10,7 +10,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Init,
+    Init {
+        #[arg(long)]
+        bare: bool,
+        path: Option<String>,
+    },
     HashObject {
         #[arg(short)]
         write: bool,
@@ -175,7 +179,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init => cmd::run(cmd::Command::Init)?,
+        Commands::Init { bare, path } => cmd::run(cmd::Command::Init { bare, path })?,
         Commands::HashObject { write, file } => cmd::run(cmd::Command::HashObject { write, file })?,
         Commands::CatFile { print, size, type_flag, object } => cmd::run(cmd::Command::CatFile { print, size, type_flag, object })?,
         Commands::WriteTree => cmd::run(cmd::Command::WriteTree)?,
