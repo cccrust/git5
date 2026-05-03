@@ -125,6 +125,17 @@ enum Commands {
         #[arg(short)]
         binary: bool,
     },
+    LsTree {
+        #[arg(short)]
+        recursive: bool,
+        tree: String,
+    },
+    UpdateRef {
+        #[arg(short)]
+        delete: bool,
+        ref_name: String,
+        hash: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -160,6 +171,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Describe { tags, abbrev } => cmd::run(cmd::Command::Describe { tags, abbrev })?,
         Commands::VerifyPack { packfile } => cmd::run(cmd::Command::VerifyPack { packfile })?,
         Commands::MkTree { binary } => cmd::run(cmd::Command::MkTree { binary })?,
+        Commands::LsTree { recursive, tree } => cmd::run(cmd::Command::LsTree { recursive, tree })?,
+        Commands::UpdateRef { delete, ref_name, hash } => cmd::run(cmd::Command::UpdateRef { delete, ref_name, hash })?,
     }
 
     Ok(())

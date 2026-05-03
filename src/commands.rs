@@ -73,6 +73,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Describe { tags, abbrev } => { describe(tags, abbrev)?; Ok(()) }
         Command::VerifyPack { packfile } => { verify_pack(&packfile)?; Ok(()) }
         Command::MkTree { binary } => { mktree(binary)?; Ok(()) }
+        Command::LsTree { recursive, tree } => { ls_tree(&tree, recursive)?; Ok(()) }
+        Command::UpdateRef { delete, ref_name, hash } => { update_ref(&ref_name, delete, hash.as_deref())?; Ok(()) }
     }
 }
 
@@ -106,6 +108,8 @@ pub enum Command {
     Describe { tags: bool, abbrev: u32 },
     VerifyPack { packfile: String },
     MkTree { binary: bool },
+    LsTree { recursive: bool, tree: String },
+    UpdateRef { delete: bool, ref_name: String, hash: Option<String> },
 }
 
 fn init() -> Result<()> {
@@ -1019,5 +1023,56 @@ fn mktree(_binary: bool) -> Result<()> {
 
     let tree_hash = write_object("tree", &tree_content)?;
     println!("{}", tree_hash);
+    Ok(())
+}
+
+fn ls_tree(tree: &str, recursive: bool) -> Result<()> {
+    let hash = resolve_revision(tree)?;
+    let (obj_type, content) = read_object(&hash)?;
+
+    if obj_type != "tree" {
+        return Err(Git5Error::InvalidObject("Not a tree object".to_string()));
+    }
+
+    let mut i = 0;
+    while i < content.len() {
+        let space_pos = i + content[i..].iter().position(|&b| b == b' ').unwrap_or(0);
+        let mode_str = String::from_utf8_lossy(&content[i..space_pos]).to_string();
+
+        let nul_pos = space_pos + content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+        let name_str = String::from_utf8_lossy(&content[space_pos+1..nul_pos]).to_string();
+
+        let sha = hex::encode(&content[nul_pos+1..nul_pos+21]);
+
+        if mode_str == "40000" && recursive {
+            ls_tree(&sha, true)?;
+        } else {
+            println!("{} {} {}\t{}", mode_str, sha, name_str, name_str);
+        }
+
+        i = nul_pos + 21;
+    }
+
+    Ok(())
+}
+
+fn update_ref(ref_name: &str, delete: bool, hash: Option<&str>) -> Result<()> {
+    let dir = git4_dir()?;
+    let ref_path = dir.join(ref_name);
+
+    if delete {
+        if ref_path.exists() {
+            fs::remove_file(&ref_path)?;
+            println!("Deleted {}", ref_name);
+        } else {
+            println!("{} not found", ref_name);
+        }
+    } else {
+        let h = hash.ok_or_else(|| Git5Error::InvalidRef("Hash required".to_string()))?;
+        fs::create_dir_all(ref_path.parent().unwrap())?;
+        fs::write(&ref_path, format!("{}\n", h))?;
+        println!("Updated {}", ref_name);
+    }
+
     Ok(())
 }
