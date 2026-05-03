@@ -17,10 +17,18 @@ pub fn run(command: Command) -> Result<()> {
             println!("{}", hash);
             Ok(())
         }
-        Command::CatFile { print, object } => {
+        Command::CatFile { print, size, type_flag, object } => {
+            let (_obj_type, content) = read_object(&object)?;
             if print {
-                let content = cat_file(&object)?;
-                print!("{}", content);
+                let content_str = cat_file(&object)?;
+                print!("{}", content_str);
+            }
+            if size {
+                println!("{}", content.len());
+            }
+            if type_flag {
+                let (obj_type, _) = read_object(&object)?;
+                println!("{}", obj_type);
             }
             Ok(())
         }
@@ -63,13 +71,15 @@ pub fn run(command: Command) -> Result<()> {
         Command::ShowRef { heads, tags } => { show_ref(heads, tags)?; Ok(()) }
         Command::CountObjects { verbose } => { count_objects(verbose)?; Ok(()) }
         Command::Describe { tags, abbrev } => { describe(tags, abbrev)?; Ok(()) }
+        Command::VerifyPack { packfile } => { verify_pack(&packfile)?; Ok(()) }
+        Command::MkTree { binary } => { mktree(binary)?; Ok(()) }
     }
 }
 
 pub enum Command {
     Init,
     HashObject { write: bool, file: String },
-    CatFile { print: bool, object: String },
+    CatFile { print: bool, size: bool, type_flag: bool, object: String },
     WriteTree,
     CommitTree { tree: String, parent: Option<String>, message: String },
     Add { files: Vec<String> },
@@ -94,6 +104,8 @@ pub enum Command {
     ShowRef { heads: bool, tags: bool },
     CountObjects { verbose: bool },
     Describe { tags: bool, abbrev: u32 },
+    VerifyPack { packfile: String },
+    MkTree { binary: bool },
 }
 
 fn init() -> Result<()> {
@@ -963,5 +975,49 @@ fn describe(_tags: bool, abbrev: u32) -> Result<()> {
         println!("{}-0-g{}", abbrev, short_hash);
     }
 
+    Ok(())
+}
+
+fn verify_pack(packfile: &str) -> Result<()> {
+    let pack_data = fs::read(packfile)?;
+    if pack_data.len() < 32 {
+        return Err(Git5Error::InvalidObject("Packfile is too small".to_string()));
+    }
+
+    if &pack_data[0..4] != b"PACK" {
+        return Err(Git5Error::InvalidObject("Invalid packfile magic".to_string()));
+    }
+
+    let version = u32::from_be_bytes(pack_data[4..8].try_into().unwrap());
+    if version != 2 {
+        return Err(Git5Error::InvalidObject(format!("Unsupported pack version: {}", version)));
+    }
+
+    let num_objects = u32::from_be_bytes(pack_data[8..12].try_into().unwrap());
+    println!("Packfile {}: valid", packfile);
+    println!("Version: {}", version);
+    println!("Objects: {}", num_objects);
+
+    Ok(())
+}
+
+fn mktree(_binary: bool) -> Result<()> {
+    let index = read_index()?;
+    let mut entries = Vec::new();
+
+    for (path, hash) in &index {
+        entries.push(("100644".to_string(), path.clone(), hash.clone()));
+    }
+
+    entries.sort_by(|a, b| a.1.cmp(&b.1));
+
+    let mut tree_content = Vec::new();
+    for (mode, name, hash) in entries {
+        tree_content.extend_from_slice(format!("{} {}\0", mode, name).as_bytes());
+        tree_content.extend_from_slice(&hex::decode(hash)?);
+    }
+
+    let tree_hash = write_object("tree", &tree_content)?;
+    println!("{}", tree_hash);
     Ok(())
 }

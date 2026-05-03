@@ -19,6 +19,10 @@ enum Commands {
     CatFile {
         #[arg(short = 'p')]
         print: bool,
+        #[arg(short = 's')]
+        size: bool,
+        #[arg(short = 't')]
+        type_flag: bool,
         object: String,
     },
     WriteTree,
@@ -114,6 +118,13 @@ enum Commands {
         #[arg(long = "abbrev", default_value = "7")]
         abbrev: u32,
     },
+    VerifyPack {
+        packfile: String,
+    },
+    MkTree {
+        #[arg(short)]
+        binary: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -122,7 +133,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Init => cmd::run(cmd::Command::Init)?,
         Commands::HashObject { write, file } => cmd::run(cmd::Command::HashObject { write, file })?,
-        Commands::CatFile { print, object } => cmd::run(cmd::Command::CatFile { print, object })?,
+        Commands::CatFile { print, size, type_flag, object } => cmd::run(cmd::Command::CatFile { print, size, type_flag, object })?,
         Commands::WriteTree => cmd::run(cmd::Command::WriteTree)?,
         Commands::CommitTree { tree, parent, message } => cmd::run(cmd::Command::CommitTree { tree, parent, message })?,
         Commands::Add { files } => cmd::run(cmd::Command::Add { files })?,
@@ -147,6 +158,8 @@ fn main() -> anyhow::Result<()> {
         Commands::ShowRef { heads, tags } => cmd::run(cmd::Command::ShowRef { heads, tags })?,
         Commands::CountObjects { verbose } => cmd::run(cmd::Command::CountObjects { verbose })?,
         Commands::Describe { tags, abbrev } => cmd::run(cmd::Command::Describe { tags, abbrev })?,
+        Commands::VerifyPack { packfile } => cmd::run(cmd::Command::VerifyPack { packfile })?,
+        Commands::MkTree { binary } => cmd::run(cmd::Command::MkTree { binary })?,
     }
 
     Ok(())
