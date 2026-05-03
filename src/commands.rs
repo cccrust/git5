@@ -89,6 +89,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Stash { message, list, pop } => { stash(&message, list, pop)?; Ok(()) }
         Command::CherryPick { commit } => { cherry_pick(&commit)?; Ok(()) }
         Command::Rebase { branch } => { rebase(&branch)?; Ok(()) }
+        Command::Bisect { subcommand, commit } => { bisect(&subcommand, commit.as_deref())?; Ok(()) }
+        Command::Worktree { subcommand, path, branch } => { worktree(&subcommand, path.as_deref(), branch.as_deref())?; Ok(()) }
     }
 }
 
@@ -138,6 +140,8 @@ pub enum Command {
     Stash { message: String, list: bool, pop: bool },
     CherryPick { commit: String },
     Rebase { branch: String },
+    Bisect { subcommand: String, commit: Option<String> },
+    Worktree { subcommand: String, path: Option<String>, branch: Option<String> },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -1681,4 +1685,156 @@ fn get_commit_range(base: &str, head: &str) -> Result<Vec<String>> {
     }
 
     Ok(commits)
+}
+
+fn bisect(subcommand: &str, commit: Option<&str>) -> Result<()> {
+    match subcommand {
+        "start" => {
+            fs::create_dir_all(".git4/bisect")?;
+            let head = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD".to_string()))?;
+            fs::write(".git4/bisect/start", &head)?;
+            println!("Bisect started. Use 'bisect good <commit>' and 'bisect bad <commit>'");
+            Ok(())
+        }
+        "good" => {
+            if let Some(c) = commit {
+                let hash = resolve_revision(c)?;
+                fs::write(".git4/bisect/good", &hash)?;
+                println!("Marked {} as good", c);
+                run_bisect()?;
+                Ok(())
+            } else {
+                Err(Git5Error::InvalidRef("Missing commit".to_string()))
+            }
+        }
+        "bad" => {
+            if let Some(c) = commit {
+                let hash = resolve_revision(c)?;
+                fs::write(".git4/bisect/bad", &hash)?;
+                println!("Marked {} as bad", c);
+                run_bisect()?;
+                Ok(())
+            } else {
+                Err(Git5Error::InvalidRef("Missing commit".to_string()))
+            }
+        }
+        "reset" => {
+            fs::remove_dir_all(".git4/bisect").ok();
+            println!("Bisect reset");
+            Ok(())
+        }
+        _ => {
+            println!("Usage: bisect start|good|bad|reset");
+            Ok(())
+        }
+    }
+}
+
+fn run_bisect() -> Result<()> {
+    let good = fs::read_to_string(".git4/bisect/good").ok();
+    let bad = fs::read_to_string(".git4/bisect/bad").ok();
+    let start = fs::read_to_string(".git4/bisect/start").ok();
+
+    if let (Some(g), Some(b), Some(s)) = (good, bad, start) {
+        let good = g.trim().to_string();
+        let bad = b.trim().to_string();
+        let start = s.trim().to_string();
+
+        let base = find_merge_base(&good, &start)?;
+        let mid = get_commit_halfway(&base, &start)?;
+
+        if mid == bad {
+            println!("First bad commit: {}", &mid[..7]);
+        } else {
+            println!("Bisecting: need to test commit {}", &mid[..7]);
+            println!("Run 'git5 bisect good' or 'git5 bisect bad' to test");
+        }
+    }
+    Ok(())
+}
+
+fn get_commit_halfway(base: &str, head: &str) -> Result<String> {
+    let mut commits = Vec::new();
+    let mut to_check = vec![head.to_string()];
+    let mut visited = std::collections::HashSet::new();
+
+    while let Some(c) = to_check.pop() {
+        if visited.contains(&c) {
+            continue;
+        }
+        visited.insert(c.clone());
+
+        if c == base {
+            continue;
+        }
+
+        commits.push(c.clone());
+
+        let (obj_type, content) = read_object(&c)?;
+        if obj_type == "commit" {
+            let content_str = String::from_utf8_lossy(&content);
+            if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+                let parent = parent_line[7..].trim().to_string();
+                to_check.push(parent);
+            }
+        }
+    }
+
+    let mid = commits.len() / 2;
+    Ok(commits[mid].clone())
+}
+
+fn worktree(subcommand: &str, path: Option<&str>, branch: Option<&str>) -> Result<()> {
+    match subcommand {
+        "add" => {
+            let p = path.ok_or_else(|| Git5Error::IoError("Missing path".to_string()))?;
+            let b = branch.unwrap_or("HEAD");
+
+            let hash = resolve_revision(b)?;
+            let target = std::path::Path::new(&p);
+
+            fs::create_dir_all(target.join(".git4/refs/heads"))?;
+            fs::write(target.join(".git4/HEAD"), format!("ref: refs/heads/{}\n", b))?;
+            fs::write(target.join(".git4/refs/heads/main"), &hash)?;
+
+            let (obj_type, content) = read_object(&hash)?;
+            if obj_type == "commit" || obj_type == "tree" {
+                let tree_hash = if obj_type == "commit" {
+                    let content_str = String::from_utf8_lossy(&content);
+                    content_str.lines()
+                        .find(|l| l.starts_with("tree "))
+                        .map(|l| l[5..].trim().to_string())
+                        .unwrap_or_default()
+                } else {
+                    hash.clone()
+                };
+
+                if !tree_hash.is_empty() {
+                    restore_tree(&tree_hash, target)?;
+                }
+            }
+
+            println!("Created worktree at {}", p);
+            Ok(())
+        }
+        "list" => {
+            if let Ok(entries) = fs::read_dir(".git4/worktrees") {
+                for entry in entries.flatten() {
+                    println!("{}", entry.path().display());
+                }
+            }
+            println!(".");
+            Ok(())
+        }
+        "remove" => {
+            let p = path.ok_or_else(|| Git5Error::IoError("Missing path".to_string()))?;
+            fs::remove_dir_all(p)?;
+            println!("Removed worktree at {}", p);
+            Ok(())
+        }
+        _ => {
+            println!("Usage: worktree add|list|remove");
+            Ok(())
+        }
+    }
 }

@@ -191,6 +191,15 @@ enum Commands {
     Rebase {
         branch: String,
     },
+    Bisect {
+        subcommand: String,
+        commit: Option<String>,
+    },
+    Worktree {
+        subcommand: String,
+        path: Option<String>,
+        branch: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -242,6 +251,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Stash { message, list, pop } => cmd::run(cmd::Command::Stash { message, list, pop })?,
         Commands::CherryPick { commit } => cmd::run(cmd::Command::CherryPick { commit })?,
         Commands::Rebase { branch } => cmd::run(cmd::Command::Rebase { branch })?,
+        Commands::Bisect { subcommand, commit } => cmd::run(cmd::Command::Bisect { subcommand, commit })?,
+        Commands::Worktree { subcommand, path, branch } => cmd::run(cmd::Command::Worktree { subcommand, path, branch })?,
     }
 
     Ok(())
