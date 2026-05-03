@@ -38,7 +38,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::Commit { message } => { commit(&message)?; Ok(()) }
         Command::Log => { log_cmd()?; Ok(()) }
         Command::Branch { name } => { branch(name)?; Ok(()) }
-        Command::Checkout { name } => { checkout(&name)?; Ok(()) }
+        Command::Checkout { create_branch, name } => { checkout(&name, create_branch)?; Ok(()) }
         Command::Status => { status()?; Ok(()) }
         Command::Diff { file } => { diff(&file)?; Ok(()) }
         Command::Merge { branch } => { merge(&branch)?; Ok(()) }
@@ -69,7 +69,7 @@ pub enum Command {
     Commit { message: String },
     Log,
     Branch { name: Option<String> },
-    Checkout { name: String },
+    Checkout { create_branch: bool, name: String },
     Status,
     Diff { file: String },
     Merge { branch: String },
@@ -166,10 +166,23 @@ fn branch(name: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn checkout(name: &str) -> Result<()> {
+fn checkout(name: &str, create_branch: bool) -> Result<()> {
+    let dir = git4_dir()?;
+
+    if create_branch {
+        let head_hash = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No commits yet".to_string()))?;
+        let branch_path = dir.join("refs/heads").join(name);
+        fs::create_dir_all(branch_path.parent().unwrap())?;
+        fs::write(&branch_path, format!("{}\n", head_hash))?;
+        let head_path = dir.join("HEAD");
+        fs::write(head_path, format!("ref: refs/heads/{}\n", name))?;
+        println!("Switched to new branch '{}'", name);
+        return Ok(());
+    }
+
     let hash = resolve_revision(name)?;
     let (obj_type, content) = read_object(&hash)?;
-    
+
     let tree_hash = if obj_type == "commit" {
         let content_str = String::from_utf8_lossy(&content);
         let mut tree_hash = String::new();
@@ -185,10 +198,9 @@ fn checkout(name: &str) -> Result<()> {
     } else {
         return Err(Git5Error::InvalidObject(format!("Cannot checkout an object of type {}", obj_type)));
     };
-    
+
     restore_tree(&tree_hash, Path::new("."))?;
-    
-    let dir = git4_dir()?;
+
     let head_path = dir.join("HEAD");
     let branch_path = dir.join("refs/heads").join(name);
     if branch_path.exists() {
@@ -422,9 +434,9 @@ fn clone(source: &str, dest: &str) -> Result<()> {
     let head_content = head_content.trim();
     if head_content.starts_with("ref: refs/heads/") {
         let branch = head_content.strip_prefix("ref: refs/heads/").unwrap();
-        let _ = checkout(branch);
+        let _ = checkout(branch, false);
     } else {
-        let _ = checkout(head_content);
+        let _ = checkout(head_content, false);
     }
     
     std::env::set_current_dir(current_dir)?;

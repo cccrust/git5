@@ -133,3 +133,37 @@ fn test_log() {
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("commit"));
 }
+
+#[test]
+fn test_checkout_new_branch() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    let output = git5().arg("checkout").arg("-b").arg("new-branch").output().unwrap();
+    eprintln!("stdout: {:?}", String::from_utf8_lossy(&output.stdout));
+    eprintln!("stderr: {:?}", String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("new-branch"));
+}
+
+#[test]
+fn test_checkout_existing_branch() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+    git5().arg("branch").arg("feature").output().unwrap();
+
+    std::fs::write("test.txt", "v2").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Update").output().unwrap();
+
+    let output = git5().arg("checkout").arg("feature").output().unwrap();
+    assert!(output.status.success());
+}

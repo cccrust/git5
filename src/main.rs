@@ -41,6 +41,8 @@ enum Commands {
         name: Option<String>,
     },
     Checkout {
+        #[arg(short)]
+        b: bool,
         name: String,
     },
     Status,
@@ -93,7 +95,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Commit { message } => cmd::run(cmd::Command::Commit { message })?,
         Commands::Log => cmd::run(cmd::Command::Log)?,
         Commands::Branch { name } => cmd::run(cmd::Command::Branch { name })?,
-        Commands::Checkout { name } => cmd::run(cmd::Command::Checkout { name })?,
+        Commands::Checkout { b, name } => cmd::run(cmd::Command::Checkout { create_branch: b, name })?,
         Commands::Status => cmd::run(cmd::Command::Status)?,
         Commands::Diff { file } => cmd::run(cmd::Command::Diff { file })?,
         Commands::Merge { branch } => cmd::run(cmd::Command::Merge { branch })?,
