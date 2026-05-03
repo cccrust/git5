@@ -167,3 +167,56 @@ fn test_checkout_existing_branch() {
     let output = git5().arg("checkout").arg("feature").output().unwrap();
     assert!(output.status.success());
 }
+
+#[test]
+fn test_clone_local() {
+    let source = TempDir::new().unwrap();
+    let dest = TempDir::new().unwrap();
+    let _dest_path = dest.as_ref().join("cloned");
+
+    std::env::set_current_dir(source.as_ref()).unwrap();
+    git5().arg("init").output().unwrap();
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("initial").output().unwrap();
+
+    std::env::set_current_dir(dest.as_ref()).unwrap();
+    let output = git5()
+        .arg("clone")
+        .arg(source.as_ref().to_str().unwrap())
+        .arg("cloned")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "clone failed: {:?}", output.stderr);
+    assert!(std::path::Path::new("cloned/test.txt").exists());
+}
+
+#[test]
+fn test_push_fetch() {
+    let local = TempDir::new().unwrap();
+    let remote = TempDir::new().unwrap();
+
+    std::env::set_current_dir(remote.as_ref()).unwrap();
+    git5().arg("init").output().unwrap();
+
+    std::env::set_current_dir(local.as_ref()).unwrap();
+    git5().arg("init").output().unwrap();
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("initial").output().unwrap();
+
+    let output = git5()
+        .arg("push")
+        .arg(remote.as_ref().to_str().unwrap())
+        .arg("main")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "push failed: {:?}", output.stderr);
+
+    let output = git5()
+        .arg("fetch")
+        .arg(remote.as_ref().to_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "fetch failed: {:?}", output.stderr);
+}
