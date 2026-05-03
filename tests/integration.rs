@@ -220,3 +220,36 @@ fn test_push_fetch() {
         .unwrap();
     assert!(output.status.success(), "fetch failed: {:?}", output.stderr);
 }
+
+#[test]
+fn test_tag() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    let output = git5().arg("tag").arg("v1.0").output().unwrap();
+    assert!(output.status.success());
+
+    let output = git5().arg("tag").output().unwrap();
+    assert!(String::from_utf8_lossy(&output.stdout).contains("v1.0"));
+}
+
+#[test]
+fn test_tag_delete() {
+    let _temp = setup_repo();
+    git5().arg("init").output().unwrap();
+
+    std::fs::write("test.txt", "content").unwrap();
+    git5().arg("add").arg("test.txt").output().unwrap();
+    git5().arg("commit").arg("-m").arg("Initial").output().unwrap();
+
+    git5().arg("tag").arg("v1.0").output().unwrap();
+    let output = git5().arg("tag").arg("-d").arg("v1.0").output().unwrap();
+    assert!(output.status.success());
+
+    let output = git5().arg("tag").output().unwrap();
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("v1.0"));
+}

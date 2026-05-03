@@ -56,6 +56,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::LsRemote { remote } => { ls_remote(&remote)?; Ok(()) }
         Command::UnpackObjects { packfile } => { unpack_objects(&packfile)?; Ok(()) }
         Command::Config { list, key, value } => { config(list, key, value)?; Ok(()) }
+        Command::Tag { delete, name } => { tag(delete, name)?; Ok(()) }
+        Command::Rm { files } => { rm(files)?; Ok(()) }
     }
 }
 
@@ -80,6 +82,8 @@ pub enum Command {
     LsRemote { remote: String },
     UnpackObjects { packfile: String },
     Config { list: bool, key: Option<String>, value: Option<String> },
+    Tag { delete: bool, name: Option<String> },
+    Rm { files: Vec<String> },
 }
 
 fn init() -> Result<()> {
@@ -766,5 +770,65 @@ fn save_config(path: &Path, config: &BTreeMap<String, String>) -> Result<()> {
     }
 
     fs::write(path, content)?;
+    Ok(())
+}
+
+fn tag(delete: bool, name: Option<String>) -> Result<()> {
+    let dir = git4_dir()?;
+    let tags_dir = dir.join("refs/tags");
+    fs::create_dir_all(&tags_dir)?;
+
+    if delete {
+        if let Some(n) = name {
+            let tag_path = tags_dir.join(&n);
+            if tag_path.exists() {
+                fs::remove_file(&tag_path)?;
+                println!("Deleted tag '{}'", n);
+            } else {
+                println!("Tag '{}' not found", n);
+            }
+        } else {
+            println!("Tag name required for deletion");
+        }
+        return Ok(());
+    }
+
+    if name.is_none() {
+        if tags_dir.exists() {
+            for entry in fs::read_dir(&tags_dir)? {
+                let entry = entry?;
+                println!("{}", entry.file_name().to_string_lossy());
+            }
+        }
+        return Ok(());
+    }
+
+    let n = name.unwrap();
+    let head_hash = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No commits yet".to_string()))?;
+    let tag_path = tags_dir.join(&n);
+    fs::write(&tag_path, format!("{}\n", head_hash))?;
+    println!("Created tag '{}'", n);
+    Ok(())
+}
+
+fn rm(files: Vec<String>) -> Result<()> {
+    let index = read_index()?;
+    let mut new_index: BTreeMap<String, String> = index;
+
+    for file in files {
+        if new_index.remove(&file).is_some() {
+            println!("Removed '{}'", file);
+        } else {
+            println!("'{}' not in index", file);
+        }
+    }
+
+    let dir = git4_dir()?;
+    let index_path = dir.join("index");
+    let mut content = String::new();
+    for (path, hash) in &new_index {
+        content.push_str(&format!("{} {}\n", hash, path));
+    }
+    fs::write(index_path, content)?;
     Ok(())
 }

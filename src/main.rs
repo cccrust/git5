@@ -80,6 +80,14 @@ enum Commands {
         key: Option<String>,
         value: Option<String>,
     },
+    Tag {
+        #[arg(short)]
+        delete: bool,
+        name: Option<String>,
+    },
+    Rm {
+        files: Vec<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -106,6 +114,8 @@ fn main() -> anyhow::Result<()> {
         Commands::LsRemote { remote } => cmd::run(cmd::Command::LsRemote { remote })?,
         Commands::UnpackObjects { packfile } => cmd::run(cmd::Command::UnpackObjects { packfile })?,
         Commands::Config { list, key, value } => cmd::run(cmd::Command::Config { list, key, value })?,
+        Commands::Tag { delete, name } => cmd::run(cmd::Command::Tag { delete, name })?,
+        Commands::Rm { files } => cmd::run(cmd::Command::Rm { files })?,
     }
 
     Ok(())
