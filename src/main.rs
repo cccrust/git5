@@ -179,6 +179,15 @@ enum Commands {
     Gc {
         aggressive: bool,
     },
+    Stash {
+        #[arg(short, long, default_value = "")]
+        message: String,
+        list: bool,
+        pop: bool,
+    },
+    CherryPick {
+        commit: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -227,6 +236,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Blame { file } => cmd::run(cmd::Command::Blame { file })?,
         Commands::Fsck { verbose } => cmd::run(cmd::Command::Fsck { verbose })?,
         Commands::Gc { aggressive } => cmd::run(cmd::Command::Gc { aggressive })?,
+        Commands::Stash { message, list, pop } => cmd::run(cmd::Command::Stash { message, list, pop })?,
+        Commands::CherryPick { commit } => cmd::run(cmd::Command::CherryPick { commit })?,
     }
 
     Ok(())

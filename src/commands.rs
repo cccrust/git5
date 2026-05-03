@@ -86,6 +86,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Blame { file } => { blame(&file)?; Ok(()) }
         Command::Fsck { verbose } => { fsck(verbose)?; Ok(()) }
         Command::Gc { aggressive } => { gc(aggressive)?; Ok(()) }
+        Command::Stash { message, list, pop } => { stash(&message, list, pop)?; Ok(()) }
+        Command::CherryPick { commit } => { cherry_pick(&commit)?; Ok(()) }
     }
 }
 
@@ -132,6 +134,8 @@ pub enum Command {
     Blame { file: String },
     Fsck { verbose: bool },
     Gc { aggressive: bool },
+    Stash { message: String, list: bool, pop: bool },
+    CherryPick { commit: String },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -1481,5 +1485,84 @@ fn collect_tree_objects(hash: &str, reachable: &mut std::collections::HashSet<St
         i = nul_pos + 21;
     }
 
+    Ok(())
+}
+
+fn stash(message: &str, list: bool, pop: bool) -> Result<()> {
+    fs::create_dir_all(".git4/refs/stash")?;
+
+    if list {
+        if let Ok(entries) = fs::read_dir(".git4/refs/stash") {
+            for (i, entry) in entries.flatten().enumerate() {
+                let _name = entry.file_name().to_string_lossy().to_string();
+                let hash = fs::read_to_string(entry.path())?.trim().to_string();
+                println!("stash@{{{}}}: {}", i, hash);
+            }
+        }
+        return Ok(());
+    }
+
+    if pop {
+        let stash_ref = ".git4/refs/stash/0";
+        if std::path::Path::new(stash_ref).exists() {
+            let hash = fs::read_to_string(stash_ref)?.trim().to_string();
+            let (obj_type, content) = read_object(&hash)?;
+            if obj_type == "commit" {
+                let content_str = String::from_utf8_lossy(&content);
+                let tree_hash = content_str.lines()
+                    .find(|l| l.starts_with("tree "))
+                    .map(|l| l[5..].trim().to_string())
+                    .ok_or_else(|| Git5Error::InvalidObject("No tree in commit".to_string()))?;
+                
+                let head = get_head()?;
+                let commit_hash = create_commit(&tree_hash, head.as_deref(), "Stash pop")?;
+                update_head(&commit_hash)?;
+                
+                restore_tree(&tree_hash, std::path::Path::new("."))?;
+                println!("Dropped stash@{{{}}}", 0);
+                fs::remove_file(stash_ref).ok();
+            }
+        }
+        return Ok(());
+    }
+
+    let tree_hash = create_tree(std::path::Path::new("."))?;
+    let head = get_head()?;
+    let commit_hash = create_commit(&tree_hash, head.as_deref(), if message.is_empty() { "Stash" } else { message })?;
+    
+    let stash_count = fs::read_dir(".git4/refs/stash")
+        .map(|e| e.flatten().count())
+        .unwrap_or(0);
+    
+    fs::write(format!(".git4/refs/stash/{}", stash_count), &commit_hash)?;
+    println!("Saved working directory and index state {}", if message.is_empty() { "" } else { message });
+    
+    Ok(())
+}
+
+fn cherry_pick(commit: &str) -> Result<()> {
+    let hash = resolve_revision(commit)?;
+    let (obj_type, content) = read_object(&hash)?;
+
+    if obj_type != "commit" {
+        return Err(Git5Error::InvalidObject("Not a commit".to_string()));
+    }
+
+    let content_str = String::from_utf8_lossy(&content);
+    let tree_hash = content_str.lines()
+        .find(|l| l.starts_with("tree "))
+        .map(|l| l[5..].trim().to_string())
+        .ok_or_else(|| Git5Error::InvalidObject("No tree in commit".to_string()))?;
+
+    let parent = get_head()?;
+    let message = content_str.lines()
+        .find(|l| l.starts_with("    "))
+        .map(|l| l.trim())
+        .unwrap_or("Cherry-pick");
+
+    let new_commit = create_commit(&tree_hash, parent.as_deref(), message)?;
+    update_head(&new_commit)?;
+
+    println!("[{}] {}", &new_commit[..7], message);
     Ok(())
 }
