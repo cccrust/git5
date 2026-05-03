@@ -1,5 +1,6 @@
 #![allow(dead_code, unused)]
 
+pub mod error;
 pub mod object;
 pub mod tree;
 pub mod commit;
@@ -7,3 +8,4 @@ pub mod index;
 pub mod commands;
 
 pub use commands::run;
+pub use error::{Git5Error, Result};

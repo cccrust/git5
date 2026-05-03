@@ -1,5 +1,5 @@
+use crate::error::{Git5Error, Result};
 use crate::object::{git4_dir, hash_object, read_object, write_object};
-use anyhow::Result;
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -51,7 +51,7 @@ pub fn write_tree(path: &Path) -> Result<String> {
 pub fn restore_tree(hash: &str, target_path: &Path) -> Result<()> {
     let (obj_type, content) = read_object(hash)?;
     if obj_type != "tree" {
-        return Err(anyhow::anyhow!("Expected tree object, got {}", obj_type));
+        return Err(Git5Error::InvalidObject(format!("Expected tree object, got {}", obj_type)));
     }
     if !target_path.exists() {
         fs::create_dir_all(target_path)?;

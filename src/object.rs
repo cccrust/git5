@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use crate::error::{Git5Error, Result};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
@@ -8,14 +8,14 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 pub fn git4_dir() -> Result<PathBuf> {
-    let mut current = std::env::current_dir()?;
+    let mut current = std::env::current_dir().map_err(|e| Git5Error::IoError(e.to_string()))?;
     loop {
         let git4_path = current.join(".git4");
         if git4_path.exists() && git4_path.is_dir() {
             return Ok(git4_path);
         }
         if !current.pop() {
-            return Err(anyhow!("Not a git4 repository (or any of the parent directories): .git4"));
+            return Err(Git5Error::NotARepository(".git4".to_string()));
         }
     }
 }
@@ -23,14 +23,14 @@ pub fn git4_dir() -> Result<PathBuf> {
 pub fn read_object(hash: &str) -> Result<(String, Vec<u8>)> {
     let dir = git4_dir()?;
     let obj_path = dir.join("objects").join(&hash[0..2]).join(&hash[2..]);
-    
-    let compressed = fs::read(&obj_path).with_context(|| format!("Object {} not found", hash))?;
+
+    let compressed = fs::read(&obj_path).map_err(|_| Git5Error::ObjectNotFound(hash.to_string()))?;
     let mut decoder = ZlibDecoder::new(compressed.as_slice());
     let mut raw = Vec::new();
-    decoder.read_to_end(&mut raw)?;
+    decoder.read_to_end(&mut raw).map_err(|e| Git5Error::IoError(e.to_string()))?;
 
-    let nul_pos = raw.iter().position(|&b| b == 0).context("Invalid object format")?;
-    let header = String::from_utf8(raw[0..nul_pos].to_vec())?;
+    let nul_pos = raw.iter().position(|&b| b == 0).ok_or_else(|| Git5Error::InvalidObject("missing null byte".to_string()))?;
+    let header = String::from_utf8(raw[0..nul_pos].to_vec()).map_err(|e| Git5Error::ParseError(e.to_string()))?;
     
     let parts: Vec<&str> = header.split(' ').collect();
     let obj_type = parts[0].to_string();

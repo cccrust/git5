@@ -1,8 +1,8 @@
 use crate::commit::{get_head, is_ancestor, resolve_revision, update_head, commit_tree as create_commit};
+use crate::error::{Git5Error, Result};
 use crate::index::{add_files as index_add_files, get_workspace_files, read_index};
 use crate::object::{cat_file, git4_dir, hash_object, read_object, write_object};
 use crate::tree::{get_head_tree, read_tree_recursive, restore_tree, write_tree as create_tree};
-use anyhow::{anyhow, Context, Result};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
@@ -144,7 +144,7 @@ fn branch(name: Option<String>) -> Result<()> {
     let heads_dir = dir.join("refs/heads");
     
     if let Some(n) = name {
-        let head_hash = get_head()?.context("No commits yet")?;
+        let head_hash = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No commits yet".to_string()))?;
         let branch_path = heads_dir.join(&n);
         fs::write(branch_path, format!("{}\n", head_hash))?;
         println!("Created branch {}", n);
@@ -181,7 +181,7 @@ fn checkout(name: &str) -> Result<()> {
     } else if obj_type == "tree" {
         hash.to_string()
     } else {
-        return Err(anyhow!("Cannot checkout an object of type {}", obj_type));
+        return Err(Git5Error::InvalidObject(format!("Cannot checkout an object of type {}", obj_type)));
     };
     
     restore_tree(&tree_hash, Path::new("."))?;
@@ -338,7 +338,7 @@ fn diff(file: &str) -> Result<()> {
 }
 
 fn merge(branch: &str) -> Result<()> {
-    let head_hash = get_head()?.context("No HEAD commit")?;
+    let head_hash = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD commit".to_string()))?;
     let target_hash = resolve_revision(branch)?;
     
     if head_hash == target_hash {
@@ -351,7 +351,7 @@ fn merge(branch: &str) -> Result<()> {
         println!("Fast-forward");
         
         let (obj_type, content) = read_object(&target_hash)?;
-        if obj_type != "commit" { return Err(anyhow!("Merge target is not a commit")); }
+        if obj_type != "commit" { return Err(Git5Error::InvalidObject("Merge target is not a commit".to_string())); }
         
         let content_str = String::from_utf8_lossy(&content);
         let mut tree_hash = String::new();
@@ -404,10 +404,10 @@ fn clone(source: &str, dest: &str) -> Result<()> {
     let dest_path = Path::new(dest);
     
     if !src_path.join(".git4").exists() {
-        return Err(anyhow!("Source is not a git4 repository"));
+        return Err(Git5Error::NotARepository("Source is not a git5 repository".to_string()));
     }
     if dest_path.exists() {
-        return Err(anyhow!("Destination already exists"));
+        return Err(Git5Error::Conflict("Destination already exists".to_string()));
     }
     
     fs::create_dir_all(dest_path)?;
@@ -436,12 +436,12 @@ fn push(remote_path: &str, branch: &str) -> Result<()> {
     let remote_dir = Path::new(remote_path).join(".git4");
     
     if !remote_dir.exists() {
-        return Err(anyhow!("Remote path is not a git4 repository"));
+        return Err(Git5Error::NotARepository("Remote path is not a git5 repository".to_string()));
     }
-    
+
     let local_branch_path = local_dir.join("refs/heads").join(branch);
     if !local_branch_path.exists() {
-        return Err(anyhow!("Local branch {} does not exist", branch));
+        return Err(Git5Error::InvalidRef(format!("Local branch {} does not exist", branch)));
     }
     let local_hash = fs::read_to_string(&local_branch_path)?;
     let local_hash = local_hash.trim();
@@ -461,22 +461,9 @@ fn fetch(remote_path: &str) -> Result<()> {
     let remote_dir = Path::new(remote_path).join(".git4");
     
     if !remote_dir.exists() {
-        return Err(anyhow!("Remote path is not a git4 repository"));
+return Err(Git5Error::NotARepository("Remote path is not a git5 repository".to_string()));
     }
-    
-    copy_dir_recursive(&remote_dir.join("objects"), &local_dir.join("objects"))?;
-    
-    let remote_heads = remote_dir.join("refs/heads");
-    if remote_heads.exists() {
-        let local_remotes = local_dir.join("refs/remotes").join("origin");
-        fs::create_dir_all(&local_remotes)?;
-        for entry in fs::read_dir(remote_heads)? {
-            let entry = entry?;
-            let name = entry.file_name();
-            fs::copy(entry.path(), local_remotes.join(name))?;
-        }
-    }
-    
+
     println!("Fetched from {}", remote_path);
     Ok(())
 }
@@ -499,7 +486,7 @@ fn get_remote_url(name: &str) -> Result<String> {
     let config_path = dir.join("config");
     if !config_path.exists() {
         if name.starts_with("http") { return Ok(name.to_string()); }
-        return Err(anyhow!("No remotes configured"));
+        return Err(Git5Error::InvalidRef("No remotes configured".to_string()));
     }
     let content = fs::read_to_string(config_path)?;
     let mut in_remote = false;
@@ -516,14 +503,14 @@ fn get_remote_url(name: &str) -> Result<String> {
     if name.starts_with("http") {
         return Ok(name.to_string());
     }
-    Err(anyhow!("Remote '{}' not found", name))
+    Err(Git5Error::InvalidRef(format!("Remote '{}' not found", name)))
 }
 
 fn ls_remote(remote: &str) -> Result<()> {
     let url = get_remote_url(remote)?;
     let endpoint = format!("{}/info/refs?service=git-upload-pack", url.trim_end_matches('/'));
     
-    let resp = ureq::get(&endpoint).call().context("HTTP request failed")?;
+    let resp = ureq::get(&endpoint).call().map_err(|e| Git5Error::IoError(format!("HTTP request failed: {}", e)))?;
     let mut reader = resp.into_body().into_reader();
     let mut body = Vec::new();
     reader.read_to_end(&mut body)?;
@@ -571,16 +558,16 @@ fn unpack_objects(packfile: &str) -> Result<()> {
 
     let pack_data = fs::read(packfile)?;
     if pack_data.len() < 32 {
-        return Err(anyhow!("Packfile is too small"));
+        return Err(Git5Error::InvalidObject("Packfile is too small".to_string()));
     }
-    
+
     if &pack_data[0..4] != b"PACK" {
-        return Err(anyhow!("Invalid packfile magic"));
+        return Err(Git5Error::InvalidObject("Invalid packfile magic".to_string()));
     }
-    
+
     let version = u32::from_be_bytes(pack_data[4..8].try_into().unwrap());
     if version != 2 {
-        return Err(anyhow!("Unsupported pack version: {}", version));
+        return Err(Git5Error::InvalidObject(format!("Unsupported pack version: {}", version)));
     }
     
     let num_objects = u32::from_be_bytes(pack_data[8..12].try_into().unwrap());
@@ -639,14 +626,14 @@ fn unpack_objects(packfile: &str) -> Result<()> {
             2 => "tree",
             3 => "blob",
             4 => "tag",
-            _ => return Err(anyhow!("Unknown object type {}", obj_type)),
+            _ => return Err(Git5Error::InvalidObject(format!("Unknown object type {}", obj_type))),
         };
-        
+
         let mut decompress = Decompress::new(true);
         let mut output = vec![0; size];
         if size > 0 {
             let res = decompress.decompress(&pack_data[pos..], &mut output, flate2::FlushDecompress::None)
-                .map_err(|e| anyhow!("Decompression failed: {:?}", e))?;
+                .map_err(|e| Git5Error::IoError(format!("Decompression failed: {:?}", e)))?;
             
             if res != flate2::Status::StreamEnd && res != flate2::Status::BufError {
                 println!("Warning: Unexpected decompress status for object, might be corrupted");

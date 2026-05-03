@@ -1,5 +1,5 @@
+use crate::error::{Git5Error, Result};
 use crate::object::{git4_dir, read_object, write_object};
-use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
 
@@ -73,7 +73,7 @@ pub fn resolve_revision(name: &str) -> Result<String> {
     if obj_path.exists() && name.len() >= 40 {
         return Ok(name.to_string());
     }
-    Err(anyhow::anyhow!("Cannot resolve revision: {}", name))
+    Err(Git5Error::InvalidRef(format!("Cannot resolve revision: {}", name)))
 }
 
 pub fn get_commit_parent(hash: &str) -> Result<Option<String>> {

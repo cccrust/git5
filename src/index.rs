@@ -1,5 +1,5 @@
+use crate::error::Result;
 use crate::object::{git4_dir, hash_object};
-use anyhow::Result;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
