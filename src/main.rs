@@ -200,6 +200,15 @@ enum Commands {
         path: Option<String>,
         branch: Option<String>,
     },
+    Submodule {
+        subcommand: String,
+        url: Option<String>,
+        path: Option<String>,
+    },
+    Clean {
+        force: bool,
+        directories: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -253,6 +262,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Rebase { branch } => cmd::run(cmd::Command::Rebase { branch })?,
         Commands::Bisect { subcommand, commit } => cmd::run(cmd::Command::Bisect { subcommand, commit })?,
         Commands::Worktree { subcommand, path, branch } => cmd::run(cmd::Command::Worktree { subcommand, path, branch })?,
+        Commands::Submodule { subcommand, url, path } => cmd::run(cmd::Command::Submodule { subcommand, url, path })?,
+        Commands::Clean { force, directories } => cmd::run(cmd::Command::Clean { force, directories })?,
     }
 
     Ok(())

@@ -91,6 +91,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Rebase { branch } => { rebase(&branch)?; Ok(()) }
         Command::Bisect { subcommand, commit } => { bisect(&subcommand, commit.as_deref())?; Ok(()) }
         Command::Worktree { subcommand, path, branch } => { worktree(&subcommand, path.as_deref(), branch.as_deref())?; Ok(()) }
+        Command::Submodule { subcommand, url, path } => { submodule(&subcommand, url.as_deref(), path.as_deref())?; Ok(()) }
+        Command::Clean { force, directories } => { clean(force, directories)?; Ok(()) }
     }
 }
 
@@ -142,6 +144,8 @@ pub enum Command {
     Rebase { branch: String },
     Bisect { subcommand: String, commit: Option<String> },
     Worktree { subcommand: String, path: Option<String>, branch: Option<String> },
+    Submodule { subcommand: String, url: Option<String>, path: Option<String> },
+    Clean { force: bool, directories: bool },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -1837,4 +1841,92 @@ fn worktree(subcommand: &str, path: Option<&str>, branch: Option<&str>) -> Resul
             Ok(())
         }
     }
+}
+
+fn submodule(subcommand: &str, url: Option<&str>, path: Option<&str>) -> Result<()> {
+    match subcommand {
+        "add" => {
+            let u = url.ok_or_else(|| Git5Error::IoError("Missing URL".to_string()))?;
+            let p = path.ok_or_else(|| Git5Error::IoError("Missing path".to_string()))?;
+
+            fs::create_dir_all(p)?;
+            fs::create_dir_all(format!("{}/.git4/refs/heads", p))?;
+            fs::write(format!("{}/.git4/HEAD", p), "ref: refs/heads/main\n")?;
+
+            let config_path = ".git4/config";
+            let mut config = std::collections::BTreeMap::new();
+            if let Ok(content) = fs::read_to_string(config_path) {
+                parse_config(&content, &mut config);
+            }
+            config.insert(format!("submodule.{}.url", p), u.to_string());
+            config.insert(format!("submodule.{}.path", p), p.to_string());
+            save_config(std::path::Path::new(config_path), &config)?;
+
+            println!("Added submodule {} at {}", u, p);
+            Ok(())
+        }
+        "list" => {
+            let config_path = ".git4/config";
+            if let Ok(content) = fs::read_to_string(config_path) {
+                let mut config = std::collections::BTreeMap::new();
+                parse_config(&content, &mut config);
+                for (key, value) in &config {
+                    if key.starts_with("submodule.") && key.ends_with(".url") {
+                        let name = &key[10..key.len()-4];
+                        if let Some(path) = config.get(&format!("submodule.{}.path", name)) {
+                            println!("{} {}", path, value);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        "update" => {
+            println!("Submodule update not fully implemented");
+            Ok(())
+        }
+        _ => {
+            println!("Usage: submodule add|list|update");
+            Ok(())
+        }
+    }
+}
+
+fn clean(force: bool, directories: bool) -> Result<()> {
+    if !force {
+        println!("Would remove:");
+        if let Ok(entries) = fs::read_dir(".") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with('.') && name != "HEAD" {
+                    if entry.path().is_file() {
+                        println!("  {}", name);
+                    } else if directories && entry.path().is_dir() && name != "refs" && name != "objects" {
+                        println!("  {}/", name);
+                    }
+                }
+            }
+        }
+        println!("Use -f to actually remove");
+        return Ok(());
+    }
+
+    let mut removed = 0;
+    if let Ok(entries) = fs::read_dir(".") {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with('.') && name != "HEAD" {
+                if entry.path().is_file() {
+                    fs::remove_file(entry.path())?;
+                    removed += 1;
+                } else if directories && entry.path().is_dir() && name != "refs" && name != "objects" {
+                    fs::remove_dir_all(entry.path())?;
+                    removed += 1;
+                }
+            }
+        }
+    }
+
+    println!("Removed {} files", removed);
+    Ok(())
 }
