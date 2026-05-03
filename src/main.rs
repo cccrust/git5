@@ -188,6 +188,9 @@ enum Commands {
     CherryPick {
         commit: String,
     },
+    Rebase {
+        branch: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -238,6 +241,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Gc { aggressive } => cmd::run(cmd::Command::Gc { aggressive })?,
         Commands::Stash { message, list, pop } => cmd::run(cmd::Command::Stash { message, list, pop })?,
         Commands::CherryPick { commit } => cmd::run(cmd::Command::CherryPick { commit })?,
+        Commands::Rebase { branch } => cmd::run(cmd::Command::Rebase { branch })?,
     }
 
     Ok(())

@@ -88,6 +88,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::Gc { aggressive } => { gc(aggressive)?; Ok(()) }
         Command::Stash { message, list, pop } => { stash(&message, list, pop)?; Ok(()) }
         Command::CherryPick { commit } => { cherry_pick(&commit)?; Ok(()) }
+        Command::Rebase { branch } => { rebase(&branch)?; Ok(()) }
     }
 }
 
@@ -136,6 +137,7 @@ pub enum Command {
     Gc { aggressive: bool },
     Stash { message: String, list: bool, pop: bool },
     CherryPick { commit: String },
+    Rebase { branch: String },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -1565,4 +1567,118 @@ fn cherry_pick(commit: &str) -> Result<()> {
 
     println!("[{}] {}", &new_commit[..7], message);
     Ok(())
+}
+
+fn rebase(branch: &str) -> Result<()> {
+    let target_hash = resolve_revision(branch)?;
+    let head = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD".to_string()))?;
+
+    if is_ancestor(&head, &target_hash)? {
+        println!("Current branch is already up to date with {}", branch);
+        return Ok(());
+    }
+
+    println!("Rebase onto {}", branch);
+
+    let base = find_merge_base(&head, &target_hash)?;
+    println!("First commit: {}", &base[..7]);
+
+    let mut commits_to_replay = get_commit_range(&base, &head)?;
+    commits_to_replay.reverse();
+
+    update_head(&target_hash)?;
+
+    for commit in commits_to_replay {
+        let (obj_type, content) = read_object(&commit)?;
+        if obj_type == "commit" {
+            let content_str = String::from_utf8_lossy(&content);
+            let tree_hash = content_str.lines()
+                .find(|l| l.starts_with("tree "))
+                .map(|l| l[5..].trim().to_string())
+                .ok_or_else(|| Git5Error::InvalidObject("No tree in commit".to_string()))?;
+
+            let message = content_str.lines()
+                .find(|l| l.starts_with("    "))
+                .map(|l| l.trim())
+                .unwrap_or("Rebase");
+
+            let current_head = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD".to_string()))?;
+            let new_commit = create_commit(&tree_hash, Some(&current_head), message)?;
+            update_head(&new_commit)?;
+
+            println!("Applied: {}", &commit[..7]);
+        }
+    }
+
+    println!("Successfully rebased and updated to {}", branch);
+    Ok(())
+}
+
+fn find_merge_base(commit1: &str, commit2: &str) -> Result<String> {
+    let mut ancestors1 = std::collections::HashSet::new();
+    let mut to_check = vec![commit1.to_string()];
+
+    while let Some(c) = to_check.pop() {
+        if ancestors1.contains(&c) {
+            continue;
+        }
+        ancestors1.insert(c.clone());
+
+        let (obj_type, content) = read_object(&c)?;
+        if obj_type == "commit" {
+            let content_str = String::from_utf8_lossy(&content);
+            if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+                let parent = parent_line[7..].trim().to_string();
+                to_check.push(parent);
+            }
+        }
+    }
+
+    let mut to_check2 = vec![commit2.to_string()];
+    while let Some(c) = to_check2.pop() {
+        if ancestors1.contains(&c) {
+            return Ok(c);
+        }
+
+        let (obj_type, content) = read_object(&c)?;
+        if obj_type == "commit" {
+            let content_str = String::from_utf8_lossy(&content);
+            if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+                let parent = parent_line[7..].trim().to_string();
+                to_check2.push(parent);
+            }
+        }
+    }
+
+    Ok(commit1.to_string())
+}
+
+fn get_commit_range(base: &str, head: &str) -> Result<Vec<String>> {
+    let mut commits = Vec::new();
+    let mut to_check = vec![head.to_string()];
+    let mut visited = std::collections::HashSet::new();
+
+    while let Some(c) = to_check.pop() {
+        if visited.contains(&c) {
+            continue;
+        }
+        visited.insert(c.clone());
+
+        if c == base {
+            continue;
+        }
+
+        commits.push(c.clone());
+
+        let (obj_type, content) = read_object(&c)?;
+        if obj_type == "commit" {
+            let content_str = String::from_utf8_lossy(&content);
+            if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+                let parent = parent_line[7..].trim().to_string();
+                to_check.push(parent);
+            }
+        }
+    }
+
+    Ok(commits)
 }
