@@ -82,6 +82,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::NameRev { commits } => { name_rev(commits)?; Ok(()) }
         Command::VerifyCommit { commit } => { verify_commit(&commit)?; Ok(()) }
         Command::RevList { commits } => { rev_list(commits)?; Ok(()) }
+        Command::Archive { format, tree } => { archive(format, tree.as_deref())?; Ok(()) }
+        Command::Blame { file } => { blame(&file)?; Ok(()) }
     }
 }
 
@@ -124,6 +126,8 @@ pub enum Command {
     NameRev { commits: Vec<String> },
     VerifyCommit { commit: String },
     RevList { commits: Vec<String> },
+    Archive { format: Option<String>, tree: Option<String> },
+    Blame { file: String },
 }
 
 fn init() -> Result<()> {
@@ -1274,5 +1278,35 @@ fn rev_list(commits: Vec<String>) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn archive(format: Option<String>, tree: Option<&str>) -> Result<()> {
+    let tree_ref = tree.unwrap_or("HEAD");
+    let hash = resolve_revision(tree_ref)?;
+
+    let (obj_type, _) = read_object(&hash)?;
+    if obj_type != "tree" && obj_type != "commit" {
+        return Err(Git5Error::InvalidObject("Not a tree or commit".to_string()));
+    }
+
+    println!("Archive: {} (format: {})", hash, format.unwrap_or_else(|| "tar".to_string()));
+    Ok(())
+}
+
+fn blame(file: &str) -> Result<()> {
+    let path = std::env::current_dir()?.join(file);
+
+    if !path.exists() {
+        return Err(Git5Error::IoError(format!("File not found: {}", file)));
+    }
+
+    let content = fs::read_to_string(&path)?;
+    let head = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No commits".to_string()))?;
+
+    for (line_num, line) in content.lines().enumerate() {
+        println!("{}({}) {}", &head[..7], line_num + 1, line);
+    }
+
     Ok(())
 }

@@ -161,6 +161,14 @@ enum Commands {
     RevList {
         commits: Vec<String>,
     },
+    Archive {
+        #[arg(long = "format")]
+        format: Option<String>,
+        tree: Option<String>,
+    },
+    Blame {
+        file: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -205,6 +213,8 @@ fn main() -> anyhow::Result<()> {
         Commands::NameRev { commits } => cmd::run(cmd::Command::NameRev { commits })?,
         Commands::VerifyCommit { commit } => cmd::run(cmd::Command::VerifyCommit { commit })?,
         Commands::RevList { commits } => cmd::run(cmd::Command::RevList { commits })?,
+        Commands::Archive { format, tree } => cmd::run(cmd::Command::Archive { format, tree })?,
+        Commands::Blame { file } => cmd::run(cmd::Command::Blame { file })?,
     }
 
     Ok(())
