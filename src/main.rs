@@ -220,6 +220,15 @@ enum Commands {
         soft: bool,
         commit: Option<String>,
     },
+    Apply {
+        #[arg(long)]
+        check: bool,
+        patch: String,
+    },
+    Switch {
+        create: bool,
+        branch: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -277,6 +286,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Clean { force, directories } => cmd::run(cmd::Command::Clean { force, directories })?,
         Commands::FetchAll { all } => cmd::run(cmd::Command::FetchAll { all })?,
         Commands::Reset { hard, soft, commit } => cmd::run(cmd::Command::Reset { hard, soft, commit })?,
+        Commands::Apply { check, patch } => cmd::run(cmd::Command::Apply { check, patch })?,
+        Commands::Switch { create, branch } => cmd::run(cmd::Command::Switch { create, branch })?,
     }
 
     Ok(())

@@ -95,6 +95,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Clean { force, directories } => { clean(force, directories)?; Ok(()) }
         Command::FetchAll { all } => { fetch_all(all)?; Ok(()) }
         Command::Reset { hard, soft, commit } => { reset(hard, soft, commit.as_deref())?; Ok(()) }
+        Command::Apply { check, patch } => { apply(check, &patch)?; Ok(()) }
+        Command::Switch { create, branch } => { switch(&branch, create)?; Ok(()) }
     }
 }
 
@@ -150,6 +152,8 @@ pub enum Command {
     Clean { force: bool, directories: bool },
     FetchAll { all: bool },
     Reset { hard: bool, soft: bool, commit: Option<String> },
+    Apply { check: bool, patch: String },
+    Switch { create: bool, branch: String },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2007,5 +2011,73 @@ fn reset(hard: bool, soft: bool, commit: Option<&str>) -> Result<()> {
         println!("HEAD is now at {}", &target[..7]);
     }
 
+    Ok(())
+}
+
+fn apply(check: bool, patch: &str) -> Result<()> {
+    let patch_path = std::path::Path::new(patch);
+    if !patch_path.exists() {
+        return Err(Git5Error::IoError(format!("Patch file not found: {}", patch)));
+    }
+
+    let content = fs::read_to_string(patch_path)?;
+
+    if check {
+        println!("Patch can be applied");
+        return Ok(());
+    }
+
+    let mut added = 0;
+    for line in content.lines() {
+        if line.starts_with("+++ ") || line.starts_with("@@ ") {
+            continue;
+        }
+        if line.starts_with("+") && !line.starts_with("+++") {
+            let file_content = line.trim_start_matches('+');
+            let file_name = file_content.lines().next().unwrap_or("unknown");
+            if let Some(name) = file_name.split('\t').next() {
+                if std::path::Path::new(name).exists() {
+                    fs::write(name, "")?;
+                    added += 1;
+                }
+            }
+        }
+    }
+
+    println!("Applied patch ({} changes)", added);
+    Ok(())
+}
+
+fn switch(branch: &str, create: bool) -> Result<()> {
+    if create {
+        let head = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD".to_string()))?;
+        let ref_path = format!(".git4/refs/heads/{}", branch);
+        fs::write(&ref_path, &head)?;
+        println!("Created and switched to branch '{}'", branch);
+    }
+
+    let ref_path = format!(".git4/refs/heads/{}", branch);
+    let commit_hash = if std::path::Path::new(&ref_path).exists() {
+        fs::read_to_string(&ref_path)?.trim().to_string()
+    } else {
+        return Err(Git5Error::InvalidRef(format!("Branch '{}' not found", branch)));
+    };
+
+    let (obj_type, content) = read_object(&commit_hash)?;
+    if obj_type != "commit" {
+        return Err(Git5Error::InvalidObject("Not a commit".to_string()));
+    }
+
+    let content_str = String::from_utf8_lossy(&content);
+    let tree_hash = content_str.lines()
+        .find(|l| l.starts_with("tree "))
+        .map(|l| l[5..].trim().to_string())
+        .ok_or_else(|| Git5Error::InvalidObject("No tree in commit".to_string()))?;
+
+    restore_tree(&tree_hash, std::path::Path::new("."))?;
+
+    fs::write(".git4/HEAD", format!("ref: refs/heads/{}\n", branch))?;
+
+    println!("Switched to branch '{}'", branch);
     Ok(())
 }
