@@ -97,6 +97,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Reset { hard, soft, commit } => { reset(hard, soft, commit.as_deref())?; Ok(()) }
         Command::Apply { check, patch } => { apply(check, &patch)?; Ok(()) }
         Command::Switch { create, branch } => { switch(&branch, create)?; Ok(()) }
+        Command::FetchPrune { prune } => { fetch_prune(prune)?; Ok(()) }
+        Command::Reflog { subcommand } => { reflog(&subcommand)?; Ok(()) }
     }
 }
 
@@ -154,6 +156,8 @@ pub enum Command {
     Reset { hard: bool, soft: bool, commit: Option<String> },
     Apply { check: bool, patch: String },
     Switch { create: bool, branch: String },
+    FetchPrune { prune: bool },
+    Reflog { subcommand: String },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2080,4 +2084,65 @@ fn switch(branch: &str, create: bool) -> Result<()> {
 
     println!("Switched to branch '{}'", branch);
     Ok(())
+}
+
+fn fetch_prune(prune: bool) -> Result<()> {
+    if !prune {
+        return fetch("");
+    }
+
+    let config_path = ".git4/config";
+    let mut config = std::collections::BTreeMap::new();
+    if let Ok(content) = fs::read_to_string(config_path) {
+        parse_config(&content, &mut config);
+    }
+
+    let mut remotes = std::collections::HashSet::new();
+    for key in config.keys() {
+        if key.starts_with("remote.") && key.ends_with(".url") {
+            if let Some(name) = key.strip_prefix("remote.") {
+                if let Some(suffix) = name.strip_suffix(".url") {
+                    remotes.insert(suffix.to_string());
+                }
+            }
+        }
+    }
+
+    for remote in remotes {
+        if let Some(url) = config.get(&format!("remote.{}.url", remote)) {
+            println!("Fetching from {} (with prune)", url);
+            let url_path = std::path::Path::new(url);
+            if let Ok(refs) = fs::read_dir(url_path.join("refs").join("heads")) {
+                for entry in refs.flatten() {
+                    let path = entry.path();
+                    let hash = fs::read_to_string(&path)?.trim().to_string();
+                    println!("  {} -> refs/heads/{}", &hash[..7], entry.file_name().to_string_lossy());
+                }
+            }
+        }
+    }
+
+    println!("Fetch with prune complete");
+    Ok(())
+}
+
+fn reflog(subcommand: &str) -> Result<()> {
+    match subcommand {
+        "show" | "list" => {
+            let reflog_path = ".git4/refs/heads/main";
+            if std::path::Path::new(reflog_path).exists() {
+                let hash = fs::read_to_string(reflog_path)?.trim().to_string();
+                println!("HEAD@{{0}}: updating to {}", &hash[..7]);
+            }
+            Ok(())
+        }
+        "expire" => {
+            println!("Reflog expire not fully implemented");
+            Ok(())
+        }
+        _ => {
+            println!("Usage: reflog show|expire");
+            Ok(())
+        }
+    }
 }

@@ -229,6 +229,13 @@ enum Commands {
         create: bool,
         branch: String,
     },
+    FetchPrune {
+        #[arg(long)]
+        prune: bool,
+    },
+    Reflog {
+        subcommand: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -288,6 +295,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Reset { hard, soft, commit } => cmd::run(cmd::Command::Reset { hard, soft, commit })?,
         Commands::Apply { check, patch } => cmd::run(cmd::Command::Apply { check, patch })?,
         Commands::Switch { create, branch } => cmd::run(cmd::Command::Switch { create, branch })?,
+        Commands::FetchPrune { prune } => cmd::run(cmd::Command::FetchPrune { prune })?,
+        Commands::Reflog { subcommand } => cmd::run(cmd::Command::Reflog { subcommand })?,
     }
 
     Ok(())
