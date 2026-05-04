@@ -48,7 +48,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::Branch { name } => { branch(name)?; Ok(()) }
         Command::Checkout { create_branch, name } => { checkout(&name, create_branch)?; Ok(()) }
         Command::Status => { status()?; Ok(()) }
-        Command::Diff { file } => { diff(&file)?; Ok(()) }
+        Command::Diff { file, stat } => { diff(&file, stat)?; Ok(()) }
         Command::Merge { branch } => { merge(&branch)?; Ok(()) }
         Command::Clone { source, dest } => { clone(&source, &dest)?; Ok(()) }
         Command::Push { remote_path, branch } => { push(&remote_path, &branch)?; Ok(()) }
@@ -122,7 +122,7 @@ pub enum Command {
     Branch { name: Option<String> },
     Checkout { create_branch: bool, name: String },
     Status,
-    Diff { file: String },
+    Diff { file: String, stat: bool },
     Merge { branch: String },
     Clone { source: String, dest: String },
     Push { remote_path: String, branch: String },
@@ -414,7 +414,7 @@ fn status() -> Result<()> {
     Ok(())
 }
 
-fn diff(file: &str) -> Result<()> {
+fn diff(file: &str, stat: bool) -> Result<()> {
     use similar::{TextDiff, ChangeTag};
 
     let index_files = read_index()?;
@@ -447,6 +447,13 @@ fn diff(file: &str) -> Result<()> {
     };
     
     if base_content == new_content {
+        return Ok(());
+    }
+
+    if stat {
+        let diff_result = TextDiff::from_lines(&base_content, &new_content);
+        let changes = diff_result.iter_all_changes().filter(|c| c.tag() != ChangeTag::Equal).count();
+        println!("{} | {} +{} -{}", file, base_content.lines().count(), changes / 2, changes / 2);
         return Ok(());
     }
     

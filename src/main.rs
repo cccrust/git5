@@ -56,6 +56,8 @@ enum Commands {
     Status,
     Diff {
         file: String,
+        #[arg(long = "stat")]
+        stat: bool,
     },
     Merge {
         branch: String,
@@ -276,7 +278,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Branch { name } => cmd::run(cmd::Command::Branch { name })?,
         Commands::Checkout { b, name } => cmd::run(cmd::Command::Checkout { create_branch: b, name })?,
         Commands::Status => cmd::run(cmd::Command::Status)?,
-        Commands::Diff { file } => cmd::run(cmd::Command::Diff { file })?,
+        Commands::Diff { file, stat } => cmd::run(cmd::Command::Diff { file, stat })?,
         Commands::Merge { branch } => cmd::run(cmd::Command::Merge { branch })?,
         Commands::Clone { source, dest } => cmd::run(cmd::Command::Clone { source, dest })?,
         Commands::Push { remote_path, branch } => cmd::run(cmd::Command::Push { remote_path, branch })?,
