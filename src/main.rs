@@ -269,6 +269,14 @@ enum Commands {
     GitHelp {
         command: Option<String>,
     },
+    LsFilesCached {
+        #[arg(long = "cached")]
+        cached: bool,
+    },
+    RevParseAbbrev {
+        #[arg(long = "abbrev-ref")]
+        abbrev_ref: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -340,6 +348,8 @@ fn main() -> anyhow::Result<()> {
         Commands::StatusShort { short } => cmd::run(cmd::Command::StatusShort { short })?,
         Commands::CommitAmend { amend, message } => cmd::run(cmd::Command::CommitAmend { amend, message })?,
         Commands::GitHelp { command } => cmd::run(cmd::Command::GitHelp { command })?,
+        Commands::LsFilesCached { cached } => cmd::run(cmd::Command::LsFilesCached { cached })?,
+        Commands::RevParseAbbrev { abbrev_ref } => cmd::run(cmd::Command::RevParseAbbrev { abbrev_ref })?,
     }
 
     Ok(())

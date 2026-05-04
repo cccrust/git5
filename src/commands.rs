@@ -109,6 +109,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::StatusShort { short: _ } => { status_short()?; Ok(()) }
         Command::CommitAmend { amend: _, message } => { commit_amend(message.as_deref())?; Ok(()) }
         Command::GitHelp { command } => { help(command.as_deref())?; Ok(()) }
+        Command::LsFilesCached { cached: _ } => { ls_files_cached()?; Ok(()) }
+        Command::RevParseAbbrev { abbrev_ref: _ } => { rev_parse_abbrev()?; Ok(()) }
     }
 }
 
@@ -178,6 +180,8 @@ pub enum Command {
     StatusShort { short: bool },
     CommitAmend { amend: bool, message: Option<String> },
     GitHelp { command: Option<String> },
+    LsFilesCached { cached: bool },
+    RevParseAbbrev { abbrev_ref: bool },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2583,6 +2587,29 @@ fn help(command: Option<&str>) -> Result<()> {
         println!("  tag, stash, bisect, worktree");
         println!("  fsck, gc, reflog");
         println!("  Use 'git5 help <command>' for more info");
+    }
+    Ok(())
+}
+
+fn ls_files_cached() -> Result<()> {
+    let index = read_index()?;
+    for (path, _) in index {
+        println!("{}", path);
+    }
+    Ok(())
+}
+
+fn rev_parse_abbrev() -> Result<()> {
+    let head_content = fs::read_to_string(".git4/HEAD")?;
+    if head_content.starts_with("ref: ") {
+        let ref_path = head_content.trim_start_matches("ref: ").trim();
+        if let Some(branch) = ref_path.strip_prefix("refs/heads/") {
+            println!("{}", branch);
+        } else {
+            println!("{}", ref_path);
+        }
+    } else {
+        println!("HEAD");
     }
     Ok(())
 }
