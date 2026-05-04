@@ -251,6 +251,14 @@ enum Commands {
     SendEmail {
         patch: String,
     },
+    LogOneline {
+        #[arg(long = "oneline")]
+        oneline: bool,
+    },
+    StatusShort {
+        #[arg(long = "short")]
+        short: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -318,6 +326,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Am { patch } => cmd::run(cmd::Command::Am { patch })?,
         Commands::FormatPatch { since } => cmd::run(cmd::Command::FormatPatch { since })?,
         Commands::SendEmail { patch } => cmd::run(cmd::Command::SendEmail { patch })?,
+        Commands::LogOneline { oneline } => cmd::run(cmd::Command::LogOneline { oneline })?,
+        Commands::StatusShort { short } => cmd::run(cmd::Command::StatusShort { short })?,
     }
 
     Ok(())

@@ -105,6 +105,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Am { patch } => { am(&patch)?; Ok(()) }
         Command::FormatPatch { since } => { format_patch(since.as_deref())?; Ok(()) }
         Command::SendEmail { patch } => { send_email(&patch)?; Ok(()) }
+        Command::LogOneline { oneline: _ } => { log_oneline()?; Ok(()) }
+        Command::StatusShort { short: _ } => { status_short()?; Ok(()) }
     }
 }
 
@@ -170,6 +172,8 @@ pub enum Command {
     Am { patch: String },
     FormatPatch { since: Option<String> },
     SendEmail { patch: String },
+    LogOneline { oneline: bool },
+    StatusShort { short: bool },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2446,5 +2450,76 @@ fn send_email(patch: &str) -> Result<()> {
     println!("From: {}", from);
     println!("To: {}", to);
     println!("[Simulated] Email sent successfully!");
+    Ok(())
+}
+
+fn log_oneline() -> Result<()> {
+    let mut current = get_head()?;
+
+    while let Some(hash) = current {
+        let (obj_type, content) = read_object(&hash)?;
+        if obj_type != "commit" {
+            break;
+        }
+
+        let content_str = String::from_utf8_lossy(&content);
+        let message = content_str.lines()
+            .find(|l| l.starts_with("    "))
+            .map(|l| l.trim())
+            .unwrap_or("No message");
+
+        println!("{} {}", &hash[..7], message);
+
+        if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+            current = Some(parent_line[7..].trim().to_string());
+        } else {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn status_short() -> Result<()> {
+    let index = crate::index::read_index()?;
+
+    let mut staged = Vec::new();
+    let mut modified = Vec::new();
+    let mut untracked = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(".") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if name.starts_with('.') || name == "HEAD" || name == "index" {
+                    continue;
+                }
+
+                let hash = crate::object::hash_object(&name, false)?;
+
+                if let Some(idx_entry) = index.get(&name) {
+                    if idx_entry != &hash {
+                        modified.push(name);
+                    } else {
+                        staged.push(name);
+                    }
+                } else {
+                    untracked.push(name);
+                }
+            }
+        }
+    }
+
+    for f in &staged {
+        println!("M {}", f);
+    }
+    for f in &modified {
+        println!(" M {}", f);
+    }
+    for f in &untracked {
+        println!("?? {}", f);
+    }
+
     Ok(())
 }
