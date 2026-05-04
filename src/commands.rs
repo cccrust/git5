@@ -111,6 +111,9 @@ pub fn run(command: Command) -> Result<()> {
         Command::GitHelp { command } => { help(command.as_deref())?; Ok(()) }
         Command::LsFilesCached { cached: _ } => { ls_files_cached()?; Ok(()) }
         Command::RevParseAbbrev { abbrev_ref: _ } => { rev_parse_abbrev()?; Ok(()) }
+        Command::Pull { remote_path } => { pull(&remote_path)?; Ok(()) }
+        Command::Restore { staged, path } => { restore(staged, &path)?; Ok(()) }
+        Command::Show { revision } => { show(revision.as_deref())?; Ok(()) }
     }
 }
 
@@ -182,6 +185,9 @@ pub enum Command {
     GitHelp { command: Option<String> },
     LsFilesCached { cached: bool },
     RevParseAbbrev { abbrev_ref: bool },
+    Pull { remote_path: String },
+    Restore { staged: bool, path: String },
+    Show { revision: Option<String> },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -613,7 +619,28 @@ fn fetch(remote_path: &str) -> Result<()> {
     let remote_dir = Path::new(remote_path).join(".git4");
     
     if !remote_dir.exists() {
-return Err(Git5Error::NotARepository("Remote path is not a git5 repository".to_string()));
+        return Err(Git5Error::NotARepository("Remote path is not a git5 repository".to_string()));
+    }
+    
+    let remote_refs = remote_dir.join("refs/heads");
+    if remote_refs.exists() {
+        for entry in fs::read_dir(remote_refs)? {
+            let entry = entry?;
+            let branch_name = entry.file_name().to_string_lossy().to_string();
+            let remote_hash = fs::read_to_string(entry.path())?.trim().to_string();
+            
+            let local_branch_dir = local_dir.join("refs/heads").join(&branch_name);
+            fs::create_dir_all(local_branch_dir.parent().unwrap())?;
+            fs::write(&local_branch_dir, format!("{}\n", remote_hash))?;
+            
+            println!("{} -> refs/heads/{}", &remote_hash[..7], branch_name);
+        }
+    }
+    
+    let remote_objects = remote_dir.join("objects");
+    let local_objects = local_dir.join("objects");
+    if remote_objects.exists() {
+        copy_dir_recursive(&remote_objects, &local_objects)?;
     }
 
     println!("Fetched from {}", remote_path);
@@ -2623,4 +2650,179 @@ fn rev_parse_abbrev() -> Result<()> {
         println!("HEAD");
     }
     Ok(())
+}
+
+fn pull(remote_path: &str) -> Result<()> {
+    println!("Fetching from {}...", remote_path);
+    fetch(remote_path)?;
+    
+    let branch = {
+        let head_content = fs::read_to_string(".git4/HEAD")?;
+        if let Some(b) = head_content.strip_prefix("ref: refs/heads/") {
+            b.trim().to_string()
+        } else {
+            "main".to_string()
+        }
+    };
+    
+    let local_branch_path = format!(".git4/refs/heads/{}", branch);
+    if std::path::Path::new(&local_branch_path).exists() {
+        let remote_hash = fs::read_to_string(&local_branch_path)?.trim().to_string();
+        
+        let current_head = get_head()?;
+        
+        if let Some(current) = current_head {
+            if current != remote_hash {
+                println!("Merging {} into {}...", &remote_hash[..7], branch);
+                
+                let (obj_type, content) = read_object(&remote_hash)?;
+                if obj_type != "commit" {
+                    return Err(Git5Error::InvalidObject("Not a commit".to_string()));
+                }
+                
+                let content_str = String::from_utf8_lossy(&content);
+                let tree_hash = content_str.lines()
+                    .find(|l| l.starts_with("tree "))
+                    .map(|l| l[5..].trim().to_string())
+                    .ok_or_else(|| Git5Error::InvalidObject("No tree in commit".to_string()))?;
+                
+                restore_tree(&tree_hash, std::path::Path::new("."))?;
+            }
+        }
+        
+        update_head(&remote_hash)?;
+        println!("Successfully pulled and updated to {}", &remote_hash[..7]);
+    }
+    
+    Ok(())
+}
+
+fn restore(staged: bool, path: &str) -> Result<()> {
+    if staged {
+        let index = read_index()?;
+        
+        if let Some(hash) = index.get(path) {
+            let (obj_type, content) = read_object(hash)?;
+            if obj_type == "blob" {
+                fs::write(path, content)?;
+                println!("Restored {} from stage", path);
+            }
+        } else {
+            return Err(Git5Error::IoError(format!("File {} not in index", path)));
+        }
+    } else {
+        let head = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No commits".to_string()))?;
+        
+        let (obj_type, content) = read_object(&head)?;
+        if obj_type != "commit" {
+            return Err(Git5Error::InvalidObject("Not a commit".to_string()));
+        }
+        
+        let content_str = String::from_utf8_lossy(&content);
+        let tree_hash = content_str.lines()
+            .find(|l| l.starts_with("tree "))
+            .map(|l| l[5..].trim().to_string())
+            .ok_or_else(|| Git5Error::InvalidObject("No tree in commit".to_string()))?;
+        
+        let (tree_type, tree_content) = read_object(&tree_hash)?;
+        if tree_type != "tree" {
+            return Err(Git5Error::InvalidObject("Not a tree".to_string()));
+        }
+        
+        let mut i = 0;
+        while i < tree_content.len() {
+            let space_pos = i + tree_content[i..].iter().position(|&b| b == b' ').unwrap_or(0);
+            let mode_str = String::from_utf8_lossy(&tree_content[i..space_pos]);
+            let nul_pos = space_pos + tree_content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+            let name_str = String::from_utf8_lossy(&tree_content[space_pos+1..nul_pos]);
+            let sha = hex::encode(&tree_content[nul_pos+1..nul_pos+21]);
+            
+            if name_str == path {
+                let (blob_type, blob_content) = read_object(&sha)?;
+                if blob_type == "blob" {
+                    fs::write(path, blob_content)?;
+                    println!("Restored {} from HEAD", path);
+                }
+                return Ok(());
+            }
+            i = nul_pos + 21;
+        }
+        
+        if std::path::Path::new(path).exists() {
+            fs::remove_file(path)?;
+            println!("Removed {} (not in HEAD)", path);
+        }
+    }
+    Ok(())
+}
+
+fn show(revision: Option<&str>) -> Result<()> {
+    let rev = revision.unwrap_or("HEAD");
+    let hash = resolve_revision(rev)?;
+    
+    let (obj_type, content) = read_object(&hash)?;
+    
+    match obj_type.as_str() {
+        "commit" => {
+            let content_str = String::from_utf8_lossy(&content);
+            println!("commit {}", hash);
+            
+            for line in content_str.lines() {
+                println!("{}", line);
+            }
+            println!();
+            
+            let tree_hash = content_str.lines()
+                .find(|l| l.starts_with("tree "))
+                .map(|l| l[5..].trim().to_string());
+            
+            if let Some(tree_hash) = tree_hash {
+                let (_, tree_content) = read_object(&tree_hash)?;
+                
+                let mut i = 0;
+                while i < tree_content.len() {
+                    let space_pos = i + tree_content[i..].iter().position(|&b| b == b' ').unwrap_or(0);
+                    let mode_str = String::from_utf8_lossy(&tree_content[i..space_pos]);
+                    let nul_pos = space_pos + tree_content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+                    let name_str = String::from_utf8_lossy(&tree_content[space_pos+1..nul_pos]);
+                    let sha = hex::encode(&tree_content[nul_pos+1..nul_pos+21]);
+                    let obj_type_str = if mode_str == "40000" { "tree" } else { "blob" };
+                    
+                    println!("{} {}\t{}", mode_str, &sha[..7], name_str);
+                    i = nul_pos + 21;
+                }
+            }
+            Ok(())
+        }
+        "tree" => {
+            let mut i = 0;
+            while i < content.len() {
+                let space_pos = i + content[i..].iter().position(|&b| b == b' ').unwrap_or(0);
+                let mode_str = String::from_utf8_lossy(&content[i..space_pos]);
+                let nul_pos = space_pos + content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+                let name_str = String::from_utf8_lossy(&content[space_pos+1..nul_pos]);
+                let sha = hex::encode(&content[nul_pos+1..nul_pos+21]);
+                let obj_type_str = if mode_str == "40000" { "tree" } else { "blob" };
+                
+                println!("{} {}\t{}", mode_str, &sha[..7], name_str);
+                i = nul_pos + 21;
+            }
+            Ok(())
+        }
+        "blob" => {
+            let content_str = String::from_utf8_lossy(&content);
+            print!("{}", content_str);
+            Ok(())
+        }
+        "tag" => {
+            let content_str = String::from_utf8_lossy(&content);
+            println!("object {}", hash);
+            println!("type commit");
+            for line in content_str.lines() {
+                println!("{}", line);
+            }
+            Ok(())
+        }
+        _ => Err(Git5Error::InvalidObject(format!("Unknown object type: {}", obj_type)))
+    }
 }

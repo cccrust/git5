@@ -279,6 +279,17 @@ enum Commands {
         #[arg(long = "abbrev-ref")]
         abbrev_ref: bool,
     },
+    Pull {
+        remote_path: String,
+    },
+    Restore {
+        #[arg(long = "staged")]
+        staged: bool,
+        path: String,
+    },
+    Show {
+        revision: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -352,6 +363,9 @@ fn main() -> anyhow::Result<()> {
         Commands::GitHelp { command } => cmd::run(cmd::Command::GitHelp { command })?,
         Commands::LsFilesCached { cached } => cmd::run(cmd::Command::LsFilesCached { cached })?,
         Commands::RevParseAbbrev { abbrev_ref } => cmd::run(cmd::Command::RevParseAbbrev { abbrev_ref })?,
+        Commands::Pull { remote_path } => cmd::run(cmd::Command::Pull { remote_path })?,
+        Commands::Restore { staged, path } => cmd::run(cmd::Command::Restore { staged, path })?,
+        Commands::Show { revision } => cmd::run(cmd::Command::Show { revision })?,
     }
 
     Ok(())
