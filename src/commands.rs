@@ -45,7 +45,7 @@ pub fn run(command: Command) -> Result<()> {
         Command::Add { files } => { index_add_files(files)?; Ok(()) }
         Command::Commit { message } => { commit(&message)?; Ok(()) }
         Command::Log => { log_cmd()?; Ok(()) }
-        Command::Branch { name } => { branch(name)?; Ok(()) }
+        Command::Branch { name, verbose } => { branch(name, verbose)?; Ok(()) }
         Command::Checkout { create_branch, name } => { checkout(&name, create_branch)?; Ok(()) }
         Command::Status => { status()?; Ok(()) }
         Command::Diff { file, stat } => { diff(&file, stat)?; Ok(()) }
@@ -123,7 +123,7 @@ pub enum Command {
     Add { files: Vec<String> },
     Commit { message: String },
     Log,
-    Branch { name: Option<String> },
+    Branch { name: Option<String>, verbose: bool },
     Checkout { create_branch: bool, name: String },
     Status,
     Diff { file: String, stat: bool },
@@ -261,7 +261,7 @@ fn log_cmd() -> Result<()> {
     Ok(())
 }
 
-fn branch(name: Option<String>) -> Result<()> {
+fn branch(name: Option<String>, verbose: bool) -> Result<()> {
     let dir = git4_dir()?;
     let heads_dir = dir.join("refs/heads");
     
@@ -273,13 +273,24 @@ fn branch(name: Option<String>) -> Result<()> {
     } else {
         let head_content = fs::read_to_string(dir.join("HEAD")).unwrap_or_default();
         let current_branch = head_content.strip_prefix("ref: refs/heads/").unwrap_or("").trim();
+        
         for entry in fs::read_dir(heads_dir)? {
             let entry = entry?;
             let b_name = entry.file_name().into_string().unwrap();
-            if b_name == current_branch {
-                println!("* {}", b_name);
+            let hash = fs::read_to_string(entry.path())?.trim().to_string();
+            
+            if verbose {
+                if b_name == current_branch {
+                    println!("* {} [{}] {}", b_name, &hash[..7], "main");
+                } else {
+                    println!("  {} [{}] {}", b_name, &hash[..7], "");
+                }
             } else {
-                println!("  {}", b_name);
+                if b_name == current_branch {
+                    println!("* {}", b_name);
+                } else {
+                    println!("  {}", b_name);
+                }
             }
         }
     }

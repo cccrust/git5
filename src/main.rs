@@ -47,6 +47,8 @@ enum Commands {
     Log,
     Branch {
         name: Option<String>,
+        #[arg(short, long = "verbose")]
+        verbose: bool,
     },
     Checkout {
         #[arg(short)]
@@ -291,7 +293,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Add { files } => cmd::run(cmd::Command::Add { files })?,
         Commands::Commit { message } => cmd::run(cmd::Command::Commit { message })?,
         Commands::Log => cmd::run(cmd::Command::Log)?,
-        Commands::Branch { name } => cmd::run(cmd::Command::Branch { name })?,
+        Commands::Branch { name, verbose } => cmd::run(cmd::Command::Branch { name, verbose })?,
         Commands::Checkout { b, name } => cmd::run(cmd::Command::Checkout { create_branch: b, name })?,
         Commands::Status => cmd::run(cmd::Command::Status)?,
         Commands::Diff { file, stat } => cmd::run(cmd::Command::Diff { file, stat })?,
