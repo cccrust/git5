@@ -238,6 +238,13 @@ enum Commands {
     },
     Shortlog,
     Whatchanged,
+    Mv {
+        source: String,
+        dest: String,
+    },
+    Am {
+        patch: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -301,6 +308,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Reflog { subcommand } => cmd::run(cmd::Command::Reflog { subcommand })?,
         Commands::Shortlog => cmd::run(cmd::Command::Shortlog)?,
         Commands::Whatchanged => cmd::run(cmd::Command::Whatchanged)?,
+        Commands::Mv { source, dest } => cmd::run(cmd::Command::Mv { source, dest })?,
+        Commands::Am { patch } => cmd::run(cmd::Command::Am { patch })?,
     }
 
     Ok(())

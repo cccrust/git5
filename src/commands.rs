@@ -101,6 +101,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Reflog { subcommand } => { reflog(&subcommand)?; Ok(()) }
         Command::Shortlog => { shortlog()?; Ok(()) }
         Command::Whatchanged => { whatchanged()?; Ok(()) }
+        Command::Mv { source, dest } => { mv(&source, &dest)?; Ok(()) }
+        Command::Am { patch } => { am(&patch)?; Ok(()) }
     }
 }
 
@@ -162,6 +164,8 @@ pub enum Command {
     Reflog { subcommand: String },
     Shortlog,
     Whatchanged,
+    Mv { source: String, dest: String },
+    Am { patch: String },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2226,5 +2230,106 @@ fn whatchanged() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn mv(source: &str, dest: &str) -> Result<()> {
+    let src_path = std::path::Path::new(source);
+    let dst_path = std::path::Path::new(dest);
+
+    if !src_path.exists() {
+        return Err(Git5Error::IoError(format!("Source file not found: {}", source)));
+    }
+
+    fs::copy(src_path, dst_path)?;
+    fs::remove_file(src_path)?;
+
+    let index = crate::index::read_index()?;
+    let mut new_index = index.clone();
+    new_index.remove(source);
+    new_index.insert(dest.to_string(), crate::object::hash_object(dest, false)?);
+
+    let mut data = String::new();
+    for (path, hash) in &new_index {
+        data.push_str(&format!("{} {}\n", hash, path));
+    }
+    fs::write(".git4/index", data)?;
+
+    println!("Renamed {} to {}", source, dest);
+    Ok(())
+}
+
+fn am(patch: &str) -> Result<()> {
+    let patch_path = std::path::Path::new(patch);
+    if !patch_path.exists() {
+        return Err(Git5Error::IoError(format!("Patch file not found: {}", patch)));
+    }
+
+    let content = fs::read_to_string(patch_path)?;
+    let mut applied = 0;
+
+    let mut current_file = String::new();
+    let mut current_content = String::new();
+    let mut in_patch = false;
+
+    for line in content.lines() {
+        if line.starts_with("From:") || line.starts_with("Subject:") {
+            continue;
+        }
+        if line.starts_with("---") && line.starts_with("+++") {
+            continue;
+        }
+        if line.starts_with("diff ") || line.starts_with("index ") {
+            continue;
+        }
+
+        if line.starts_with("--- ") {
+            if !current_file.is_empty() && !current_content.is_empty() {
+                let file_path = std::path::Path::new(&current_file);
+                fs::write(file_path, &current_content)?;
+                applied += 1;
+            }
+            in_patch = false;
+            continue;
+        }
+
+        if line.starts_with("new file mode") || line.starts_with("similarity") || line.starts_with("new file mode") {
+            in_patch = false;
+            continue;
+        }
+
+        if line.starts_with("diff --git") {
+            if !current_file.is_empty() && !current_content.is_empty() {
+                let file_path = std::path::Path::new(&current_file);
+                fs::write(file_path, &current_content)?;
+                applied += 1;
+            }
+            if let Some(name) = line.split(" b/").nth(1) {
+                current_file = name.to_string();
+            }
+            current_content = String::new();
+            in_patch = true;
+            continue;
+        }
+
+        if in_patch {
+            if line.starts_with('+') && !line.starts_with("+++") {
+                current_content.push_str(&line[1..]);
+                current_content.push('\n');
+            } else if line.starts_with('-') && !line.starts_with("---") {
+            } else if !line.starts_with('\\') {
+                current_content.push_str(line);
+                current_content.push('\n');
+            }
+        }
+    }
+
+    if !current_file.is_empty() && !current_content.is_empty() {
+        let file_path = std::path::Path::new(&current_file);
+        fs::write(file_path, &current_content)?;
+        applied += 1;
+    }
+
+    println!("Applied {} patches", applied);
     Ok(())
 }
