@@ -103,6 +103,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Whatchanged => { whatchanged()?; Ok(()) }
         Command::Mv { source, dest } => { mv(&source, &dest)?; Ok(()) }
         Command::Am { patch } => { am(&patch)?; Ok(()) }
+        Command::FormatPatch { since } => { format_patch(since.as_deref())?; Ok(()) }
+        Command::SendEmail { patch } => { send_email(&patch)?; Ok(()) }
     }
 }
 
@@ -166,6 +168,8 @@ pub enum Command {
     Whatchanged,
     Mv { source: String, dest: String },
     Am { patch: String },
+    FormatPatch { since: Option<String> },
+    SendEmail { patch: String },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2331,5 +2335,116 @@ fn am(patch: &str) -> Result<()> {
     }
 
     println!("Applied {} patches", applied);
+    Ok(())
+}
+
+fn format_patch(since: Option<&str>) -> Result<()> {
+    let base = if let Some(s) = since {
+        resolve_revision(s)?
+    } else {
+        get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD".to_string()))?
+    };
+
+    let mut commits = Vec::new();
+    let mut current = get_head()?;
+
+    while let Some(hash) = current {
+        if hash == base {
+            break;
+        }
+        commits.push(hash.clone());
+
+        let (obj_type, content) = read_object(&hash)?;
+        if obj_type == "commit" {
+            let content_str = String::from_utf8_lossy(&content);
+            if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+                current = Some(parent_line[7..].trim().to_string());
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    for (i, commit_hash) in commits.iter().enumerate() {
+        let (obj_type, content) = read_object(commit_hash)?;
+        if obj_type != "commit" {
+            continue;
+        }
+
+        let content_str = String::from_utf8_lossy(&content);
+        let mut author = "Unknown".to_string();
+        let mut message = String::new();
+        let mut in_message = false;
+
+        for line in content_str.lines() {
+            if line.starts_with("author ") {
+                if let Some(end) = line.find(" <") {
+                    author = line[7..end].to_string();
+                }
+            }
+            if line.starts_with("    ") {
+                in_message = true;
+                message.push_str(line.trim());
+                message.push('\n');
+            }
+        }
+
+        let filename = format!("000{}-{}.patch", i + 1, &commit_hash[..7]);
+        let mut patch_content = String::new();
+        patch_content.push_str(&format!("From {}\n", commit_hash));
+        patch_content.push_str(&format!("From: {}\n", author));
+        patch_content.push_str("Subject: [PATCH] ");
+        patch_content.push_str(&message.lines().next().unwrap_or("").chars().take(60).collect::<String>());
+        patch_content.push_str("\n\n");
+        patch_content.push_str(&message);
+        patch_content.push_str("---\n");
+
+        if let Some(tree_line) = content_str.lines().find(|l| l.starts_with("tree ")) {
+            let tree_hash = tree_line[5..].trim().to_string();
+            if let Ok((_, tree_content)) = read_object(&tree_hash) {
+                let mut j = 0;
+                while j < tree_content.len() {
+                    let space_pos = j + tree_content[j..].iter().position(|&b| b == b' ').unwrap_or(0);
+                    let nul_pos = space_pos + tree_content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+                    let name = String::from_utf8_lossy(&tree_content[space_pos+1..nul_pos]).to_string();
+                    patch_content.push_str(&format!(" a/{}\n b/{}\n", name, name));
+                    j = nul_pos + 21;
+                }
+            }
+        }
+
+        fs::write(&filename, &patch_content)?;
+        println!("Wrote {}", filename);
+    }
+
+    Ok(())
+}
+
+fn send_email(patch: &str) -> Result<()> {
+    let patch_path = std::path::Path::new(patch);
+    if !patch_path.exists() {
+        return Err(Git5Error::IoError(format!("Patch file not found: {}", patch)));
+    }
+
+    let content = fs::read_to_string(patch_path)?;
+    println!("Sending patch {}...", patch);
+
+    let mut from = "unknown".to_string();
+    let mut to = "developer@example.com".to_string();
+
+    for line in content.lines() {
+        if line.starts_with("From:") {
+            from = line.trim_start_matches("From:").trim().to_string();
+        }
+        if line.starts_with("Subject:") {
+            println!("Subject: {}", line.trim_start_matches("Subject:").trim());
+        }
+    }
+
+    println!("From: {}", from);
+    println!("To: {}", to);
+    println!("[Simulated] Email sent successfully!");
     Ok(())
 }

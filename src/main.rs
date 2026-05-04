@@ -245,6 +245,12 @@ enum Commands {
     Am {
         patch: String,
     },
+    FormatPatch {
+        since: Option<String>,
+    },
+    SendEmail {
+        patch: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -310,6 +316,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Whatchanged => cmd::run(cmd::Command::Whatchanged)?,
         Commands::Mv { source, dest } => cmd::run(cmd::Command::Mv { source, dest })?,
         Commands::Am { patch } => cmd::run(cmd::Command::Am { patch })?,
+        Commands::FormatPatch { since } => cmd::run(cmd::Command::FormatPatch { since })?,
+        Commands::SendEmail { patch } => cmd::run(cmd::Command::SendEmail { patch })?,
     }
 
     Ok(())
