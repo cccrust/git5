@@ -236,6 +236,8 @@ enum Commands {
     Reflog {
         subcommand: String,
     },
+    Shortlog,
+    Whatchanged,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -297,6 +299,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Switch { create, branch } => cmd::run(cmd::Command::Switch { create, branch })?,
         Commands::FetchPrune { prune } => cmd::run(cmd::Command::FetchPrune { prune })?,
         Commands::Reflog { subcommand } => cmd::run(cmd::Command::Reflog { subcommand })?,
+        Commands::Shortlog => cmd::run(cmd::Command::Shortlog)?,
+        Commands::Whatchanged => cmd::run(cmd::Command::Whatchanged)?,
     }
 
     Ok(())

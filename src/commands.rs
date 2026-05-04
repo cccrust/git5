@@ -99,6 +99,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::Switch { create, branch } => { switch(&branch, create)?; Ok(()) }
         Command::FetchPrune { prune } => { fetch_prune(prune)?; Ok(()) }
         Command::Reflog { subcommand } => { reflog(&subcommand)?; Ok(()) }
+        Command::Shortlog => { shortlog()?; Ok(()) }
+        Command::Whatchanged => { whatchanged()?; Ok(()) }
     }
 }
 
@@ -158,6 +160,8 @@ pub enum Command {
     Switch { create: bool, branch: String },
     FetchPrune { prune: bool },
     Reflog { subcommand: String },
+    Shortlog,
+    Whatchanged,
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2145,4 +2149,82 @@ fn reflog(subcommand: &str) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn shortlog() -> Result<()> {
+    let mut authors = std::collections::BTreeMap::new();
+    let mut current = get_head()?;
+
+    while let Some(hash) = current {
+        let (obj_type, content) = read_object(&hash)?;
+        if obj_type != "commit" {
+            break;
+        }
+
+        let content_str = String::from_utf8_lossy(&content);
+        for line in content_str.lines() {
+            if line.starts_with("author ") {
+                if let Some(author_end) = line.find(" <") {
+                    let author = line[7..author_end].to_string();
+                    *authors.entry(author).or_insert(0) += 1;
+                }
+            }
+        }
+
+        if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+            current = Some(parent_line[7..].trim().to_string());
+        } else {
+            break;
+        }
+    }
+
+    for (author, count) in authors {
+        println!("{} ({})", count, author);
+    }
+
+    Ok(())
+}
+
+fn whatchanged() -> Result<()> {
+    let mut current = get_head()?;
+    let mut shown = std::collections::HashSet::new();
+
+    while let Some(hash) = current {
+        if shown.contains(&hash) {
+            break;
+        }
+        shown.insert(hash.clone());
+
+        let (obj_type, content) = read_object(&hash)?;
+        if obj_type != "commit" {
+            break;
+        }
+
+        println!("commit {}", hash);
+
+        let content_str = String::from_utf8_lossy(&content);
+        if let Some(tree_line) = content_str.lines().find(|l| l.starts_with("tree ")) {
+            let tree_hash = tree_line[5..].trim().to_string();
+            if let Ok((_, tree_content)) = read_object(&tree_hash) {
+                let mut i = 0;
+                while i < tree_content.len() {
+                    let space_pos = i + tree_content[i..].iter().position(|&b| b == b' ').unwrap_or(0);
+                    let nul_pos = space_pos + tree_content[space_pos..].iter().position(|&b| b == 0).unwrap_or(0);
+                    let name = String::from_utf8_lossy(&tree_content[space_pos+1..nul_pos]).to_string();
+                    println!(":\t{}", name);
+                    i = nul_pos + 21;
+                }
+            }
+        }
+
+        println!();
+
+        if let Some(parent_line) = content_str.lines().find(|l| l.starts_with("parent ")) {
+            current = Some(parent_line[7..].trim().to_string());
+        } else {
+            break;
+        }
+    }
+
+    Ok(())
 }
