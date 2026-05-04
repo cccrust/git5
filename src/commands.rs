@@ -107,6 +107,8 @@ pub fn run(command: Command) -> Result<()> {
         Command::SendEmail { patch } => { send_email(&patch)?; Ok(()) }
         Command::LogOneline { oneline: _ } => { log_oneline()?; Ok(()) }
         Command::StatusShort { short: _ } => { status_short()?; Ok(()) }
+        Command::CommitAmend { amend: _, message } => { commit_amend(message.as_deref())?; Ok(()) }
+        Command::GitHelp { command } => { help(command.as_deref())?; Ok(()) }
     }
 }
 
@@ -174,6 +176,8 @@ pub enum Command {
     SendEmail { patch: String },
     LogOneline { oneline: bool },
     StatusShort { short: bool },
+    CommitAmend { amend: bool, message: Option<String> },
+    GitHelp { command: Option<String> },
 }
 
 fn init(bare: bool, path: Option<&str>) -> Result<()> {
@@ -2528,5 +2532,57 @@ fn status_short() -> Result<()> {
         println!("?? {}", f);
     }
 
+    Ok(())
+}
+
+fn commit_amend(message: Option<&str>) -> Result<()> {
+    let head = get_head()?.ok_or_else(|| Git5Error::InvalidRef("No HEAD".to_string()))?;
+
+    let (obj_type, content) = read_object(&head)?;
+    if obj_type != "commit" {
+        return Err(Git5Error::InvalidObject("HEAD is not a commit".to_string()));
+    }
+
+    let content_str = String::from_utf8_lossy(&content);
+    let tree_hash = content_str.lines()
+        .find(|l| l.starts_with("tree "))
+        .map(|l| l[5..].trim().to_string())
+        .ok_or_else(|| Git5Error::InvalidObject("No tree in commit".to_string()))?;
+
+    let parent = head;
+    let commit_msg = message.unwrap_or("Amended commit");
+
+    let new_commit = create_commit(&tree_hash, Some(&parent), commit_msg)?;
+    update_head(&new_commit)?;
+
+    println!("[{}] {}", &new_commit[..7], commit_msg);
+    Ok(())
+}
+
+fn help(command: Option<&str>) -> Result<()> {
+    if let Some(cmd) = command {
+        match cmd {
+            "init" => println!("git5 init [--bare] [path] - Initialize repository"),
+            "commit" => println!("git5 commit -m <message> - Create commit"),
+            "log" => println!("git5 log [--oneline] - Show commit history"),
+            "branch" => println!("git5 branch [name] - List/create branches"),
+            "checkout" => println!("git5 checkout <branch> - Switch branches"),
+            "clone" => println!("git5 clone <source> <dest> - Clone repository"),
+            "push" => println!("git5 push <remote> <branch> - Push to remote"),
+            "fetch" => println!("git5 fetch <remote> - Fetch from remote"),
+            "merge" => println!("git5 merge <branch> - Merge branch"),
+            "rebase" => println!("git5 rebase <branch> - Rebase onto branch"),
+            "stash" => println!("git5 stash [save|list|pop] - Stash changes"),
+            _ => println!("No help for '{}'", cmd),
+        }
+    } else {
+        println!("Available commands:");
+        println!("  init, add, commit, log, status, diff");
+        println!("  branch, checkout, merge, rebase");
+        println!("  clone, push, fetch, remote");
+        println!("  tag, stash, bisect, worktree");
+        println!("  fsck, gc, reflog");
+        println!("  Use 'git5 help <command>' for more info");
+    }
     Ok(())
 }

@@ -261,6 +261,14 @@ enum Commands {
         #[arg(long = "short")]
         short: bool,
     },
+    CommitAmend {
+        #[arg(long = "amend")]
+        amend: bool,
+        message: Option<String>,
+    },
+    GitHelp {
+        command: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -330,6 +338,8 @@ fn main() -> anyhow::Result<()> {
         Commands::SendEmail { patch } => cmd::run(cmd::Command::SendEmail { patch })?,
         Commands::LogOneline { oneline } => cmd::run(cmd::Command::LogOneline { oneline })?,
         Commands::StatusShort { short } => cmd::run(cmd::Command::StatusShort { short })?,
+        Commands::CommitAmend { amend, message } => cmd::run(cmd::Command::CommitAmend { amend, message })?,
+        Commands::GitHelp { command } => cmd::run(cmd::Command::GitHelp { command })?,
     }
 
     Ok(())
