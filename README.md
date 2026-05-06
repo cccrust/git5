@@ -1,10 +1,10 @@
-# git4
+# git5
 
 A minimalist Git implementation written in Rust. This project demonstrates how version control systems work by reimplementing core Git functionality from scratch, using only essential Rust libraries for compression (flate2) and hashing (sha1).
 
 ## Overview
 
-git4 is a lightweight Git clone that implements the fundamental concepts of version control:
+git5 is a lightweight Git clone that implements the fundamental concepts of version control:
 - Object storage (blobs, trees, commits)
 - Reference management (branches, tags)
 - Index/staging area
@@ -77,10 +77,10 @@ git5 merge feature-branch
 - **Commits**: Snapshots with metadata
 
 ### Storage Location
-- `.git4/objects/` - Object database
-- `.git4/refs/` - References (branches, tags)
-- `.git4/HEAD` - Current HEAD
-- `.git4/index` - Staging area
+- `.git5/objects/` - Object database
+- `.git5/refs/` - References (branches, tags)
+- `.git5/HEAD` - Current HEAD
+- `.git5/index` - Staging area
 
 ## Dependencies
 

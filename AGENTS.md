@@ -1,6 +1,6 @@
-# git4 開發規範與計畫指南 (AGENTS.md)
+# git5 開發規範與計畫指南 (AGENTS.md)
 
-這份文件旨在定義給 AI Agent 以及其他維護者在進行 `git4` 專案開發時的標準操作流程（SOP）與專案整體計畫藍圖。
+這份文件旨在定義給 AI Agent 以及其他維護者在進行 `git5` 專案開發時的標準操作流程（SOP）與專案整體計畫藍圖。
 
 ## 開發操作規定 (SOP)
 
@@ -20,20 +20,20 @@
 
 ## 專案開發總體計畫
 
-`git4` 是一個基於 Rust 所建構的輕量版本控制系統，旨在以最簡潔且無依賴外部底層工具的方式，自行建立並還原 git 的核心工作原理。
+`git5` 是一個基於 Rust 所建構的輕量版本控制系統，旨在以最簡潔且無依賴外部底層工具的方式，自行建立並還原 git 的核心工作原理。
 
 ### 已完成階段
-- **v0.1**: 專案基礎建設。確立資料儲存結構 (`.git4/objects`, `refs`, `HEAD`)，以 `flate2` 封裝 Zlib 並利用 `sha1` 實作雜湊。具備產生 Blob、Tree 與 Commit 的指令，以及最初階的 `add`, `commit`, `log` 打底流程。
-- **v0.2**: 分支系統。成功加入了 `branch` 指令以產生多線開發管理能力，並實體還原了 `checkout` 功能，使 `git4` 有能力將 Tree 物件從資料庫中重構到工作目錄上。
+- **v0.1**: 專案基礎建設。確立資料儲存結構 (`.git5/objects`, `refs`, `HEAD`)，以 `flate2` 封裝 Zlib 並利用 `sha1` 實作雜湊。具備產生 Blob、Tree 與 Commit 的指令，以及最初階的 `add`, `commit`, `log` 打底流程。
+- **v0.2**: 分支系統。成功加入了 `branch` 指令以產生多線開發管理能力，並實體還原了 `checkout` 功能，使 `git5` 有能力將 Tree 物件從資料庫中重構到工作目錄上。
 - **v0.3 - 狀態管理 (`status`)**: 實作三向比對引擎，能精準列出 `to be committed`, `not staged`, `untracked` 之差異狀態。
 - **v0.4 - 差異與合併 (`diff` / `merge`)**: 整合 `similar` 套件做到文字級逐行比對 (`diff`)，並實作了 Fast-forward 的快轉合併防護機制。
 - **v0.5 - 本地跨倉儲遠端操作**: 以跨實體目錄模擬 `clone`, `push`, `fetch`。具備跨資料夾封裝對拷並獨立解析還原分支的能力。
 
 ### 未來預定階段：從地端走向聯網 (v0.6 ~ v1.0)
-為了讓 `git4` 能夠真正與遠端伺服器（例如 GitHub）接軌，接下來必須擁抱 HTTP Smart Git 協定與 `.pack` 綜合打包機制：
+為了讓 `git5` 能夠真正與遠端伺服器（例如 GitHub）接軌，接下來必須擁抱 HTTP Smart Git 協定與 `.pack` 綜合打包機制：
 
 - **v0.6 - `remote` 管理與 HTTP 探索**: 
-  - 實作 `.git4/config` 設定檔，新增 `git4 remote add <name> <url>` 來記憶網域。
+  - 實作 `.git5/config` 設定檔，新增 `git5 remote add <name> <url>` 來記憶網域。
   - 開發對 HTTP 端點 `GET info/refs?service=git-upload-pack` 的通訊請求，能夠解讀來自 GitHub 等伺服器的分支名單與 SHA1 hash 發現端點。
 - **v0.7 - Packfile 壓縮解碼器引擎**:
   - 真實 Git 通訊不會傳送鬆散物件，而是 `.pack` 檔。
